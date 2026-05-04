@@ -736,14 +736,16 @@ function updateExpiryBadge() {
     }
   });
 
-  const urgent = transactions.filter(t => {
-    if (t.status !== 'Open') return false;
+  // Use grouped positions (not raw fills) for accurate counts
+  const openGrouped = groupFills(transactions.filter(t => t.status === 'Open'));
+
+  const urgent = openGrouped.filter(t => {
     const days = Math.round((new Date(t.expiry) - today) / 86400000);
     return days <= 7;
   }).length;
 
-  // Badge count = total open positions
-  const openCount = transactions.filter(t => t.status === 'Open').length;
+  // Badge count = number of open positions (grouped)
+  const openCount = openGrouped.length;
 
   const navItems = document.querySelectorAll('.nav-item[data-page]');
   navItems.forEach(el => {
