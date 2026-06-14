@@ -749,6 +749,40 @@ function toBase(amount, currency, date) {
   return amount * getFxRate(currency, date);
 }
 
+// Taux de change LIVE (CCY -> USD) récupérés via Yahoo Finance, avec repli sur
+// la table BCE si indisponible. Sert aux valeurs ACTUELLES (ex. collatéral requis).
+let liveFx = null; // ex: { EUR: 1.157, GBP: 1.34, CAD: 0.71, HKD: 0.128 }
+
+async function fetchLiveFx() {
+  const ccys = ['EUR', 'GBP', 'CAD', 'HKD'];
+  const out = {};
+  await Promise.all(ccys.map(async c => {
+    try {
+      const p = await fetchPrice(`${c}USD=X`); // Yahoo : 1 CCY = p USD
+      if (p) out[c] = p;
+    } catch {}
+  }));
+  if (Object.keys(out).length) liveFx = { ...(liveFx || {}), ...out };
+}
+
+// Taux CCY -> USD du jour : live si dispo, sinon dernier taux BCE connu.
+function rateToUSDToday(ccy) {
+  if (!ccy || ccy === 'USD') return 1.0;
+  if (liveFx && liveFx[ccy]) return liveFx[ccy];
+  return getRateToUSD(ccy, new Date().toISOString().slice(0, 10));
+}
+
+// Conversion au taux de change du JOUR (live), pour les valeurs ACTUELLES comme
+// le collatéral requis — une obligation présente, pas liée à la date du trade.
+// À ne PAS utiliser pour les primes (taux de la date du trade) ni les ratios de rendement.
+function toBaseToday(amount, currency) {
+  if (!currency || currency === BASE_CCY) return amount;
+  const c = rateToUSDToday(currency);
+  const b = rateToUSDToday(BASE_CCY);
+  if (c == null || !b) return amount; // repli sûr
+  return amount * (c / b);
+}
+
 function txNet(t) {
   // If fxRate is stored on trade, premium is already converted to USD base
   if (t.fxRate && t.fxRate !== 1 && t.currency !== BASE_CCY) {
@@ -3196,10 +3230,13 @@ async function fetchPrice(ticker) {
 async function fetchAllPrices() {
   const open = filteredTransactions().filter(t => t.status === 'Open');
   const tickers = [...new Set(open.map(t => t.ticker))];
-  await Promise.all(tickers.map(async ticker => {
-    const price = await fetchPrice(ticker);
-    if (price !== null) livePrices[ticker] = price;
-  }));
+  await Promise.all([
+    fetchLiveFx(), // taux de change live, en parallèle des cours
+    ...tickers.map(async ticker => {
+      const price = await fetchPrice(ticker);
+      if (price !== null) livePrices[ticker] = price;
+    }),
+  ]);
 }
 
 async function refreshPricesAndRender() {
@@ -3237,7 +3274,7 @@ function renderPositions() {
   // Rename _fills to _trades for backward compat
   openGrouped.forEach(g => { g._trades = g._fills; });
 
-  const totalCollateral = openGrouped.filter(t=>t.type==='P').reduce((s,t)=>s+toBase(t.strike*t.qty*getMultiplier(t), t.currency, t.date),0);
+  const totalCollateral = openGrouped.filter(t=>t.type==='P').reduce((s,t)=>s+toBaseToday(t.strike*t.qty*getMultiplier(t), t.currency),0);
   const totalPremOpen = open.reduce((s,t)=>s+txNet(t), 0);
   const cashAvailable = accountKPI.cashUSD;
   const utilizationPct = cashAvailable > 0 ? (totalCollateral / cashAvailable * 100) : 0;
@@ -3596,7 +3633,7 @@ async function loadAnalyseData(optType) {
   }
 
   const positions = grouped.map(t => {
-    const collat     = toBase(t.strike * t.qty * getMultiplier(t), t.currency, t.date);
+    const collat     = toBaseToday(t.strike * t.qty * getMultiplier(t), t.currency);
     const price      = livePrices[t.ticker] ?? null;
     const sectorInfo = getSectorInfo(t.ticker);
     const sector     = sectorInfo?.sector || 'Autre';
@@ -3850,7 +3887,7 @@ function loadSectorData(groupBy, optType) {
     const label = gb === 'subSector'
       ? (info?.subSector || info?.sector || 'Autre')
       : (info?.sector || 'Autre');
-    const collat = toBase(t.strike * t.qty * getMultiplier(t), t.currency, t.date);
+    const collat = toBaseToday(t.strike * t.qty * getMultiplier(t), t.currency);
     bySector[label] = (bySector[label] || 0) + collat;
     if (!tickerBySector[label]) tickerBySector[label] = [];
     tickerBySector[label].push({
