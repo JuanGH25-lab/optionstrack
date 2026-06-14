@@ -6347,12 +6347,10 @@ async function handleEmailStep() {
   btn.textContent = 'Vérification…';
 
   try {
-    // Check if email is in allowed_members and if account already created
-    const res = await fetch(
-      `${SUPA_URL}/rest/v1/allowed_members?email=eq.${encodeURIComponent(authEmail)}&select=email,has_account`,
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` } }
-    );
-    const data = await res.json();
+    // Verifie l'appartenance via une fonction RPC securisee (SECURITY DEFINER).
+    // Ne renvoie qu'un oui/non pour CET email — n'expose jamais la liste.
+    const { data, error } = await supa.rpc('check_member', { p_email: authEmail });
+    if (error) throw error;
 
     if (!data || data.length === 0) {
       showError('auth-error-email', "Cet email n'est pas enregistré comme membre. Rejoignez la formation pour accéder à OLT Tracker.");
@@ -6394,19 +6392,7 @@ async function handleRegister() {
 
   if (error) {
     if (error.message === 'User already registered') {
-      // Account exists — fix has_account flag and switch to login step
-      await fetch(
-        `${SUPA_URL}/rest/v1/allowed_members?email=eq.${encodeURIComponent(authEmail)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPA_KEY,
-            'Authorization': `Bearer ${SUPA_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ has_account: true }),
-        }
-      );
+      // Le compte existe deja (has_account est gere cote serveur) → page de connexion
       document.getElementById('auth-login-sub').textContent = `Connectez-vous avec ${authEmail}`;
       showStep('login');
       return;
@@ -6426,20 +6412,7 @@ async function handleRegister() {
     return;
   }
 
-  // Mark account as created in allowed_members
-  await fetch(
-    `${SUPA_URL}/rest/v1/allowed_members?email=eq.${encodeURIComponent(authEmail)}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': `Bearer ${SUPA_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ has_account: true }),
-    }
-  );
-
+  // has_account est passe a true cote serveur par le trigger d'inscription.
   hideAuthScreen();
 }
 
@@ -6494,15 +6467,12 @@ document.getElementById('auth-login-btn').addEventListener('click', handleLogin)
   const { data: { session } } = await supa.auth.getSession();
   if (session) {
     try {
-      const res = await fetch(
-        `${SUPA_URL}/rest/v1/allowed_members?email=eq.${encodeURIComponent(session.user.email)}&select=email`,
-        { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` } }
-      );
-      const data = await res.json();
-      if (res.ok && Array.isArray(data) && data.length > 0) {
+      // Re-verifie l'appartenance via la RPC securisee (revoque si l'email a ete retire)
+      const { data, error } = await supa.rpc('check_member', { p_email: session.user.email });
+      if (!error && Array.isArray(data) && data.length > 0) {
         hideAuthScreen(); // Valid session + still a member → grant access
       } else {
-        // Email not in allowed_members → revoke access
+        // Email plus dans la liste → revoquer l'acces
         await supa.auth.signOut();
       }
     } catch(e) {
