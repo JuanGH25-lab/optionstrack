@@ -4168,6 +4168,17 @@ function saveAppData() {
   }
 }
 
+// Une option dont la date d'expiration est passée ne peut PAS rester "Open".
+// Couvre les longs calls jamais clôturés (ex. renommage de ticker SENS→SENS1, ou
+// la réconciliation qui ne traite que les SELL) et toute position non réconciliée.
+// Idempotent : ne touche que les statuts "Open" déjà expirés.
+function markExpiredOptions() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  transactions.forEach(t => {
+    if (t.status === 'Open' && t.expiry && new Date(t.expiry) < today) t.status = 'Expired';
+  });
+}
+
 function loadAppData() {
   try {
     const raw = localStorage.getItem(DATA_STORAGE_KEY);
@@ -4197,6 +4208,8 @@ function loadAppData() {
         b.strike === t.strike && b.expiry === t.expiry
       )) { t.status = 'Closed'; t.assigned = true; }
     });
+    // Marque expirée toute option ouverte dont la date d'expiration est passée
+    markExpiredOptions();
     return transactions.length > 0;
   } catch(e) {
     console.warn('loadAppData failed:', e);
@@ -4472,8 +4485,11 @@ function ibParseXML(xmlText) {
     const dateTime     = node.getAttribute('dateTime') || '';
     const transactionID = node.getAttribute('transactionID') || '';
     if (!ticker || !tradeDate || !strike) return;
-    // Skip zero-value expiration entries — IB creates BUY at $0 when options expire worthless
-    if (!isSell && proceeds === 0 && ibComm === 0) return;
+    // Skip zero-value expiration entries — IB books a $0 trade quand une option expire
+    // sans valeur : un BUY à 0 pour une position short, un SELL à 0 pour une position
+    // longue (ex. long call qui expire). Avant, seul le cas BUY était filtré → l'expiration
+    // d'un long call créait un faux trade "SELL" fantôme à 0. On filtre désormais les deux sens.
+    if (proceeds === 0 && ibComm === 0) return;
     const fees = ibComm <= 0 ? ibComm : -Math.abs(ibComm);
     const isAssigned = !isSell && (openClose.includes('A') || notes.split(';').map(s=>s.trim()).includes('A'));
     let status = 'Open';
@@ -4666,9 +4682,11 @@ function ibMergeData(parsed) {
 
   // Cross-dedup key WITHOUT time: used to match CSV vs XML (same trade, different granularity)
   const crossKey     = t => `${t.date}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}`;
-  // Cross-dedup key WITH time: used for CSV↔CSV dedup to distinguish partial fills
-  // Partial fills share date/ticker/strike/expiry/action but have different execution times
-  const crossKeyTime = t => `${t.date}|${t.time || ''}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}`;
+  // Cross-dedup key WITH time: used for CSV↔CSV dedup to distinguish partial fills.
+  // /!\ Inclut qty ET montant : deux fills partiels d'un même ordre s'exécutent
+  // à la MÊME seconde (même date/heure/ticker/strike/action) mais diffèrent par la
+  // quantité/le montant — sans ça, le 2e fill était supprimé à tort comme doublon.
+  const crossKeyTime = t => `${t.date}|${t.time || ''}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}|${t.qty}|${Math.round(((t.premiumOrig ?? t.premiumCollected) || 0) * 100)}`;
 
   parsed.trades.forEach(t => {
     // Dedup niveau 1 : transactionID exact (XML↔XML)
@@ -4710,6 +4728,9 @@ function ibMergeData(parsed) {
     transactions.push({ id: Date.now() + Math.random(), ...t });
     added.push(t);
   });
+
+  // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
+  markExpiredOptions();
 
   // ── Update accountKPI from IB data
   let kpiUpdates = {};
@@ -6094,8 +6115,10 @@ function deduplicateTransactions() {
   const before = transactions.length;
   // Without time: used for CSV↔XML matching (XML trades may not have exact same time)
   const crossKey     = t => `${t.date}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}`;
-  // With time: used for CSV↔CSV dedup to preserve partial fills
-  const crossKeyTime = t => `${t.date}|${t.time||''}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}`;
+  // With time: used for CSV↔CSV dedup to preserve partial fills.
+  // Inclut qty ET montant : deux fills partiels d'un même ordre à la même seconde
+  // diffèrent par la quantité/le montant (sinon le 2e était supprimé à tort).
+  const crossKeyTime = t => `${t.date}|${t.time||''}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}|${t.qty}|${Math.round(((t.premiumOrig ?? t.premiumCollected) || 0) * 100)}`;
 
   // Build a clean map: prefer trades with transactionID over CSV trades for same crossKey
   const byTxId   = new Map(); // transactionID → trade
