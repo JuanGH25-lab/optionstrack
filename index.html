@@ -3026,9 +3026,27 @@ function renderMonthlyReport(months) {
 
   // Monthly return: monthNet / (deposits up to year N + premiums collected before month N)
   const monthStart = `${m}-01`;
-  const depositsUpToMonth = Object.keys(accountKPI)
-    .filter(k => k.startsWith('_deposits_') && k.replace('_deposits_','') <= m.slice(0,4))
-    .reduce((s, k) => s + accountKPI[k], 0);
+  // Dépôts effectués AVANT le mois en cours (mois en cours exclu).
+  // Préfère la ventilation mensuelle `_depositsM_YYYY-MM` (précise) ; repli sur les
+  // totaux annuels `_deposits_YYYY` pour les données importées avant ce correctif.
+  const yM = m.slice(0, 4);
+  // Années disposant de buckets MENSUELS (XML YTD) → comptées au mois près (précis).
+  const monthlyYears = new Set(
+    Object.keys(accountKPI)
+      .filter(k => k.startsWith('_depositsM_'))
+      .map(k => k.replace('_depositsM_', '').slice(0, 4))
+  );
+  let depositsUpToMonth = 0;
+  // XML : buckets mensuels strictement AVANT le mois M (mois en cours exclu)
+  Object.keys(accountKPI).forEach(k => {
+    if (k.startsWith('_depositsM_') && k.replace('_depositsM_', '') < m) depositsUpToMonth += accountKPI[k];
+  });
+  // CSV : total ANNUEL des années sans données mensuelles, jusqu'à l'année de M incluse
+  Object.keys(accountKPI).forEach(k => {
+    if (!k.startsWith('_deposits_')) return;
+    const y = k.replace('_deposits_', '');
+    if (!monthlyYears.has(y) && y <= yM) depositsUpToMonth += accountKPI[k];
+  });
   const premiumsBeforeMonth = transactions
     .filter(t => t.date < monthStart)
     .reduce((s, t) => s + txNet(t), 0);
@@ -4397,6 +4415,7 @@ function ibParseXML(xmlText) {
     trades: [], openPositions: [],
     nav: null, cash: null, accountId: null, accountName: null, errors: [],
     deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
+    depositsByMonth: {}, // { 'YYYY-MM': montant } — pour le capital en début de mois
     cashTxDetails: [],
     twr: null,
     flexFromDate: '', flexToDate: '', // populated below from FlexStatement attributes
@@ -4585,6 +4604,11 @@ function ibParseXML(xmlText) {
     if (txId && seenDepositTxIds.has(txId)) return;
     if (txId) seenDepositTxIds.add(txId);
     result.deposits += amount;
+    // Ventilation mensuelle (le jour exact n'importe pas pour le capital en début de mois)
+    if (depDate && depDate.length >= 7) {
+      const mo = depDate.slice(0, 7);
+      result.depositsByMonth[mo] = (result.depositsByMonth[mo] || 0) + amount;
+    }
   });
 
   // Priorité des sources d'intérêts (du plus précis au moins précis) :
@@ -4765,6 +4789,13 @@ function ibMergeData(parsed) {
       .filter(k => k.startsWith('_deposits_'))
       .reduce((s, k) => s + accountKPI[k], 0);
     kpiUpdates.deposited = parsed.deposits;
+  }
+  // Ventilation MENSUELLE des dépôts (pour le capital en début de mois).
+  // Replace par mois (idempotent sur ré-import) — additif, n'affecte pas les totaux annuels.
+  if (parsed.depositsByMonth && Object.keys(parsed.depositsByMonth).length) {
+    Object.entries(parsed.depositsByMonth).forEach(([mo, amt]) => {
+      accountKPI[`_depositsM_${mo}`] = amt; // replace, not accumulate
+    });
   }
   {
     const intKey = `_interest_${mostRecentYear}`;
@@ -5815,6 +5846,8 @@ function ibParseCSV(csvText) {
       if (val > 0) result.deposits += val;
     });
   }
+  // NB : CSV (années précédentes) → on garde uniquement le total ANNUEL (_deposits_YYYY).
+  // Seul le XML YTD de l'année en cours alimente les buckets mensuels (_depositsM_YYYY-MM).
 
   // ── Reconcile trade status against actual open positions
   // SELL trades not in openPositions list → mark Closed or Expired based on expiry date
