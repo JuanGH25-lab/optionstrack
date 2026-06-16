@@ -819,11 +819,17 @@ function filteredTransactions() {
 function groupFills(txList) {
   const map = {};
   txList.forEach(t => {
-    // For BUY (rachats/rolls), IB peut encoder des expiries légèrement différentes
-    // selon les fills partiels → on ignore l'expiry pour les BUY afin de tout regrouper
-    const key = t.action === 'BUY'
-      ? `${t.date}|${t.ticker}|${t.type}|${t.strike}|BUY|${t.currency}`
-      : `${t.date}|${t.ticker}|${t.type}|${t.strike}|${t.expiry}|SELL|${t.currency}`;
+    // Un "trade" = un ORDRE. IBKR fournit ibOrderID (identique pour les fills partiels
+    // d'un même ordre, différent entre deux ordres séparés même contrat/jour) → on groupe
+    // par ordre quand dispo. Sinon (CSV/manuel, pas d'ordre) on retombe sur date+contrat.
+    // Pour les BUY, l'expiry est ignorée (IB encode parfois des expiries légèrement
+    // différentes selon les fills partiels d'un même rachat).
+    const oid = (t.ibOrderID && t.ibOrderID !== '0') ? t.ibOrderID : '';
+    const key = oid
+      ? `ORD|${oid}`
+      : (t.action === 'BUY'
+          ? `${t.date}|${t.ticker}|${t.type}|${t.strike}|BUY|${t.currency}`
+          : `${t.date}|${t.ticker}|${t.type}|${t.strike}|${t.expiry}|SELL|${t.currency}`);
     if (!map[key]) {
       map[key] = {
         ...t,
@@ -912,7 +918,9 @@ function totalPremiumCollected() {
 
 function getStockStats() {
   const map = {};
-  filteredTransactions().filter(isRealTrade).forEach(t => {
+  // groupFills → 1 ordre = 1 trade (cohérent avec le reste de l'app) ; les sommes
+  // de primes sont préservées par le regroupement.
+  groupFills(filteredTransactions()).filter(isRealTrade).forEach(t => {
     if (!map[t.ticker]) map[t.ticker]={ticker:t.ticker,premiumCollected:0,trades:0,open:0,currency:t.currency,_lastDate:''};
     map[t.ticker].premiumCollected += txNet(t);
     map[t.ticker].trades++;
@@ -3200,46 +3208,81 @@ async function captureMonthlyReport(month) {
 let livePrices = {};
 let priceRefreshTimer = null;
 
+// Overrides manuels (exceptions où la devise ne suffit pas à deviner le suffixe,
+// ex. renommage pur GLXY1→GLXY). Les actions européennes se résolvent désormais
+// automatiquement (voir resolvedYahoo / YAHOO_SUFFIXES) — pas besoin de les lister ici.
 const YAHOO_MAP = {
-  'MC':    'MC.PA',
-  'RI':    'RI.PA',
-  'GLXY1': 'GLXY',   // IBKR notation → ticker Nasdaq réel
+  'MC':    'MC.PA',  // LVMH (Euronext Paris) — override explicite (position active)
+  'RI':    'RI.PA',  // Pernod Ricard (Euronext Paris)
+  'GLXY1': 'GLXY',   // IBKR notation → ticker Nasdaq réel (renommage, pas un suffixe de place)
 };
 
+// Suffixes Yahoo par devise (places de cotation principales), testés dans l'ordre.
+const YAHOO_SUFFIXES = {
+  EUR: ['.PA', '.DE', '.AS', '.MI', '.MC', '.BR', '.LS', '.VI', '.HE', '.IR'],
+  GBP: ['.L'],
+  CHF: ['.SW'],
+  CAD: ['.TO', '.V'],
+  DKK: ['.CO'],
+  SEK: ['.ST'],
+  NOK: ['.OL'],
+};
+
+// Cache auto-rempli : ticker IBKR → symbole Yahoo résolu (persisté dans localStorage).
+let resolvedYahoo = {};
+
 function yahooSymbol(ticker) {
-  if (YAHOO_MAP[ticker]) return YAHOO_MAP[ticker];
-  // Tickers purement numériques = actions Hong Kong (ex: 6862 → 6862.HK)
-  if (/^\d+$/.test(ticker)) return ticker + '.HK';
+  if (YAHOO_MAP[ticker]) return YAHOO_MAP[ticker];   // override manuel prioritaire
+  if (resolvedYahoo[ticker]) return resolvedYahoo[ticker]; // résolution auto mémorisée
+  if (/^\d+$/.test(ticker)) return ticker + '.HK';  // tickers numériques = Hong Kong
   return ticker;
 }
 
-async function fetchPrice(ticker) {
-  const sym = yahooSymbol(ticker);
-  const yahooUrl1 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
-  const yahooUrl2 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
+// Normalise GBp (pence) ↔ GBP pour la validation de devise
+const _normCcy = c => (c === 'GBp' ? 'GBP' : c);
 
+// Récupère { price, currency } pour UN symbole Yahoo précis, via la chaîne de proxies.
+async function fetchYahooQuote(sym) {
+  const u1 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
+  const u2 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
   const urls = [
-    // Vercel proxy (priorité — fiable et sans CORS)
-    `/api/proxy?url=${encodeURIComponent(yahooUrl1)}`,
-    `/api/proxy?url=${encodeURIComponent(yahooUrl2)}`,
-    // Direct (fonctionne parfois depuis certains navigateurs)
-    yahooUrl1,
-    yahooUrl2,
-    // Proxies publics fallback
-    `https://corsproxy.io/?${encodeURIComponent(yahooUrl1)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl1)}`,
+    `/api/proxy?url=${encodeURIComponent(u1)}`,     // Vercel proxy (fiable, sans CORS)
+    `/api/proxy?url=${encodeURIComponent(u2)}`,
+    u1, u2,                                          // direct
+    `https://corsproxy.io/?${encodeURIComponent(u1)}`,   // proxies publics fallback
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(u1)}`,
   ];
-
   for (const url of urls) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) continue;
       const data = await res.json();
-      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-                 || data?.chart?.result?.[0]?.meta?.previousClose;
-      if (price) return price;
-    } catch {
-      continue;
+      const meta = data?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice || meta?.previousClose;
+      if (price) return { price, currency: meta?.currency || '' };
+    } catch { continue; }
+  }
+  return null;
+}
+
+async function fetchPrice(ticker, ccy) {
+  // 1. Symbole connu (override manuel > cache auto > règle HK > ticker nu)
+  const known = yahooSymbol(ticker);
+  let q = await fetchYahooQuote(known);
+  if (q) return q.price;
+
+  // 2. Échec + devise non-USD + ticker nu → on teste les suffixes de place de la devise
+  if (ccy && ccy !== 'USD' && known === ticker) {
+    const suffixes = YAHOO_SUFFIXES[_normCcy(ccy)] || [];
+    for (const suf of suffixes) {
+      const cand = ticker + suf;
+      q = await fetchYahooQuote(cand);
+      // on exige la bonne devise (GBp≈GBP) pour éviter un faux match sur une autre place
+      if (q && (!q.currency || _normCcy(q.currency) === _normCcy(ccy))) {
+        resolvedYahoo[ticker] = cand;  // mémorise la résolution
+        saveAppData();                  // persiste le cache
+        return q.price;
+      }
     }
   }
   return null;
@@ -3248,10 +3291,13 @@ async function fetchPrice(ticker) {
 async function fetchAllPrices() {
   const open = filteredTransactions().filter(t => t.status === 'Open');
   const tickers = [...new Set(open.map(t => t.ticker))];
+  // Devise par ticker (pour résoudre le suffixe Yahoo des actions étrangères)
+  const ccyByTicker = {};
+  open.forEach(t => { if (!ccyByTicker[t.ticker]) ccyByTicker[t.ticker] = t.currency || 'USD'; });
   await Promise.all([
     fetchLiveFx(), // taux de change live, en parallèle des cours
     ...tickers.map(async ticker => {
-      const price = await fetchPrice(ticker);
+      const price = await fetchPrice(ticker, ccyByTicker[ticker]);
       if (price !== null) livePrices[ticker] = price;
     }),
   ]);
@@ -4158,6 +4204,7 @@ function saveAppData() {
       accountKPI:    accountKPI,
       monthlyGoal:   monthlyGoal,
       tickerAliases: TICKER_ALIASES,
+      yahooResolved: resolvedYahoo,
       savedAt:       new Date().toISOString(),
     };
     const json = JSON.stringify(payload);
@@ -4173,7 +4220,7 @@ function saveAppData() {
           date: t.date, time: t.time, expiry: t.expiry, strike: t.strike,
           qty: t.qty, premiumCollected: t.premiumCollected, fees: t.fees,
           status: t.status, currency: t.currency,
-          multiplier: t.multiplier, transactionID: t.transactionID,
+          multiplier: t.multiplier, transactionID: t.transactionID, ibOrderID: t.ibOrderID,
           assigned: t.assigned,
         }));
         const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, savedAt: new Date().toISOString(), slim: true };
@@ -4216,6 +4263,10 @@ function loadAppData() {
     // Restore ticker aliases (e.g. "6862" → "HDO") so statuses are correct on reload
     if (payload.tickerAliases && typeof payload.tickerAliases === 'object') {
       Object.assign(TICKER_ALIASES, payload.tickerAliases);
+    }
+    // Restaure le cache de résolution Yahoo (ex. VOW3 → VOW3.DE)
+    if (payload.yahooResolved && typeof payload.yahooResolved === 'object') {
+      Object.assign(resolvedYahoo, payload.yahooResolved);
     }
     // Migration: fix SELL trades incorrectly marked 'Expired' when actually assigned
     transactions.forEach(t => {
@@ -4503,6 +4554,7 @@ function ibParseXML(xmlText) {
     const notes        = node.getAttribute('notes') || '';
     const dateTime     = node.getAttribute('dateTime') || '';
     const transactionID = node.getAttribute('transactionID') || '';
+    const ibOrderID     = node.getAttribute('ibOrderID') || ''; // identique pour les fills d'un même ordre
     if (!ticker || !tradeDate || !strike) return;
     // Skip zero-value expiration entries — IB books a $0 trade quand une option expire
     // sans valeur : un BUY à 0 pour une position short, un SELL à 0 pour une position
@@ -4530,6 +4582,7 @@ function ibParseXML(xmlText) {
       fxRate,
       status, currency,
       transactionID,
+      ibOrderID,
       multiplier: multiplier !== 100 ? multiplier : undefined,
       ...(isAssigned ? { assigned: true } : {}),
     });
