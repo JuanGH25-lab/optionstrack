@@ -2724,7 +2724,8 @@ function growthSVG(compound, linear, months) {
   const ticks = Array.from({length:nT+1},(_,i)=>minV+range*i/nT);
   const grid = ticks.map(v=>`<line x1="${pL}" y1="${yS(v).toFixed(1)}" x2="${W-pR}" y2="${yS(v).toFixed(1)}" stroke="var(--card-border)" stroke-width="1"/>
     <text x="${pL-4}" y="${(yS(v)+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--c-muted)" font-family="DM Mono,monospace">${fmtA(v)}</text>`).join('');
-  const step = months<=12?3:months<=24?6:12;
+  // Espacement des étiquettes X selon l'horizon (évite le chevauchement sur les longues durées)
+  const step = months<=12?3 : months<=24?6 : months<=60?12 : months<=120?24 : months<=240?48 : 60;
   const xLbls = Array.from({length:Math.floor(months/step)+1},(_,i)=>i*step).map(i=>{
     const lbl = i===0?'M0':i%12===0?'A'+(i/12):'M'+i;
     return `<text x="${xS(i).toFixed(1)}" y="${H-pB+14}" text-anchor="middle" font-size="9" fill="var(--c-muted)" font-family="DM Mono,monospace">${lbl}</text>`;
