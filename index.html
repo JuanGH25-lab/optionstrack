@@ -2605,7 +2605,17 @@ function renderGrowth() {
         </div>
 
         <div style="margin-top:14px">
-          <div class="gr-kpi"><div class="gr-kpi-val" id="g-final">—</div><div class="gr-kpi-lbl">Capital final projeté</div></div>
+          <div class="gr-kpi" style="display:flex;align-items:center;gap:14px">
+            <div style="flex:1">
+              <div class="gr-kpi-val" id="g-final">—</div>
+              <div class="gr-kpi-lbl">Capital final projeté</div>
+            </div>
+            <div style="width:1px;align-self:stretch;background:var(--card-border)"></div>
+            <div style="flex:1">
+              <div class="gr-kpi-val" id="g-premium-val" style="color:#2ecc71">—</div>
+              <div class="gr-kpi-lbl">Primes / mois · à terme</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2689,6 +2699,12 @@ function growthUpdate() {
   const fmtK = v => v >= 1e6 ? ccySym()+(v/1e6).toFixed(2)+'M' : v >= 1e3 ? ccySym()+(v/1e3).toFixed(1)+'k' : ccySym()+Math.round(v).toLocaleString('en-US');
   const el = id => document.getElementById(id);
   if (el('g-final')) el('g-final').textContent = fmtK(compound[months]);
+
+  // Primes mensuelles à terme = rendement mensuel moyen × capital final projeté
+  if (el('g-premium-val')) {
+    const monthlyPremium = compound[months] * yieldPct / 100;
+    el('g-premium-val').textContent = `≈ ${ccySym()}${Math.round(monthlyPremium).toLocaleString('en-US')}`;
+  }
 
   const wrap = el('g-chart-wrap');
   if (wrap) wrap.innerHTML = growthSVG(compound, linear, months);
