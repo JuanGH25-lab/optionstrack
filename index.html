@@ -1950,7 +1950,9 @@ function renderTransactions() {
             <td>
               <div style="display:flex;align-items:center;gap:5px">
                 ${partialD ? `<button onclick="event.stopPropagation();toggleRowDetail('${t.id}')" style="background:none;border:none;cursor:pointer;color:#f0883e;font-size:13px;padding:0;line-height:1;opacity:0.8" title="Voir le détail de l'assignation partielle">${isExp ? '▾' : '▸'}</button>` : ''}
-                ${t.action === 'SELL' && t.assigned
+                ${t.exercised
+                  ? `<span class="tx-tag" style="background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
+                  : t.action === 'SELL' && t.assigned
                   ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e;cursor:pointer" title="Cliquer pour annuler l'assignation" onclick="event.stopPropagation();toggleAssigned('${t.id}')">ASSIGNED</span>`
                   : t.action === 'SELL' && t.status === 'Expired'
                   ? `<span class="tx-tag" style="background:${stBg};color:${stC};cursor:pointer" title="Cliquer pour marquer comme Assigned" onclick="event.stopPropagation();toggleAssigned('${t.id}')">${t.status}</span>`
@@ -4148,7 +4150,9 @@ function openStockModal(ticker) {
         <td style="padding:9px 18px">
           <div style="display:flex;align-items:center;gap:5px">
             ${partialD ? `<button onclick="event.stopPropagation();toggleRowDetail('${t.id}')" style="background:none;border:none;cursor:pointer;color:#f0883e;font-size:13px;padding:0;line-height:1;opacity:0.8" title="Voir le détail de l'assignation partielle">${isExp ? '▾' : '▸'}</button>` : ''}
-            ${t.action === 'SELL' && t.assigned
+            ${t.exercised
+              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
+              : t.action === 'SELL' && t.assigned
               ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e;cursor:pointer" title="Cliquer pour annuler l'assignation" onclick="event.stopPropagation();toggleAssigned('${t.id}')">ASSIGNED</span>`
               : t.action === 'SELL' && t.status === 'Expired'
               ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagS(t.status)};cursor:pointer" title="Cliquer pour marquer comme Assigned" onclick="event.stopPropagation();toggleAssigned('${t.id}')">${t.status}</span>`
@@ -4248,7 +4252,7 @@ function saveAppData() {
           qty: t.qty, premiumCollected: t.premiumCollected, fees: t.fees,
           status: t.status, currency: t.currency,
           multiplier: t.multiplier, transactionID: t.transactionID, ibOrderID: t.ibOrderID,
-          assigned: t.assigned,
+          assigned: t.assigned, exercised: t.exercised,
         }));
         const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, savedAt: new Date().toISOString(), slim: true };
         localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(payload2));
@@ -4494,6 +4498,7 @@ function ibParseXML(xmlText) {
     nav: null, cash: null, accountId: null, accountName: null, errors: [],
     deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
     depositsByMonth: {}, // { 'YYYY-MM': montant } — pour le capital en début de mois
+    closedContracts: [], // exercices/assignations détectés → pour badge "EXERCISED"/"ASSIGNED"
     cashTxDetails: [],
     twr: null,
     flexFromDate: '', flexToDate: '', // populated below from FlexStatement attributes
@@ -4583,6 +4588,18 @@ function ibParseXML(xmlText) {
     const transactionID = node.getAttribute('transactionID') || '';
     const ibOrderID     = node.getAttribute('ibOrderID') || ''; // identique pour les fills d'un même ordre
     if (!ticker || !tradeDate || !strike) return;
+    // Capture les exercices ("Ex") et assignations ("A") — events de clôture souvent à $0
+    // (donc skippés juste après) → pour afficher "EXERCISED"/"ASSIGNED" au lieu de "Closed".
+    if (openClose.includes('C')) {
+      const _codes = notes.split(';').map(s => s.trim());
+      if (_codes.includes('Ex') || _codes.includes('A')) {
+        result.closedContracts.push({
+          ticker, type: putCall === 'C' ? 'C' : 'P',
+          strike, expiry: normDate(expiry), date: normDate(tradeDate),
+          kind: _codes.includes('Ex') ? 'exercised' : 'assigned',
+        });
+      }
+    }
     // Skip zero-value expiration entries — IB books a $0 trade quand une option expire
     // sans valeur : un BUY à 0 pour une position short, un SELL à 0 pour une position
     // longue (ex. long call qui expire). Avant, seul le cas BUY était filtré → l'expiration
@@ -4835,6 +4852,17 @@ function ibMergeData(parsed) {
 
   // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
   markExpiredOptions();
+
+  // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED")
+  (parsed.closedContracts || []).forEach(cc => {
+    transactions.forEach(t => {
+      if (normTicker(t.ticker) === normTicker(cc.ticker) && t.type === cc.type &&
+          t.strike === cc.strike && t.expiry === cc.expiry && t.date <= cc.date) {
+        if (t.status === 'Open') t.status = 'Closed';
+        if (cc.kind === 'exercised') t.exercised = true; else t.assigned = true;
+      }
+    });
+  });
 
   // ── Update accountKPI from IB data
   let kpiUpdates = {};
