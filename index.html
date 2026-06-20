@@ -3618,8 +3618,18 @@ function renderPositions() {
                     cellGrouped[k].qty += t.qty;
                   });
                   const groups = Object.values(cellGrouped);
+                  // Halo ITM/OTM : vert = OTM (safe), rouge = ITM (risque). Neutre si cours indispo.
+                  // PUT ITM si cours < strike ; CALL ITM si cours > strike.
+                  const px = livePrices[ticker];
+                  let halo = '';
+                  if (px != null) {
+                    const anyITM = groups.some(g => g.type === 'P' ? px < g.strike : px > g.strike);
+                    halo = anyITM
+                      ? 'border-color:rgba(248,81,73,0.65);box-shadow:0 0 10px rgba(248,81,73,0.45)'
+                      : 'border-color:rgba(46,204,113,0.6);box-shadow:0 0 10px rgba(46,204,113,0.40)';
+                  }
                   return `<td style="padding:4px">
-                    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;text-align:center">
+                    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;text-align:center;${halo}">
                       ${groups.map(t => {
                         const sym = ccySym(t.currency);
                         return `<div style="margin-bottom:${groups.length>1?'5px':'0'}">
