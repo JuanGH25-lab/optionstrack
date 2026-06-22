@@ -6476,6 +6476,29 @@ async function ibAutoSync() {
           <br><button class="auth-back" onclick="showStep('email')">← Changer d'email</button>
         </div>
 
+        <!-- Step: Nouveau mot de passe (arrivée via lien de réinitialisation) -->
+        <div id="auth-step-reset" style="display:none">
+          <div class="auth-step-title">Nouveau mot de passe 🔑</div>
+          <div class="auth-step-sub">Choisissez un nouveau mot de passe pour votre compte</div>
+          <div id="auth-error-reset" class="auth-error"></div>
+          <div id="auth-success-reset" class="auth-success"></div>
+          <div class="auth-field">
+            <label class="auth-label">Nouveau mot de passe</label>
+            <div class="auth-pw-wrap">
+              <input type="password" id="auth-reset-pw" class="auth-input" placeholder="Minimum 8 caractères" autocomplete="new-password" style="padding-right:40px"/>
+              <button class="auth-pw-toggle" onclick="togglePw('auth-reset-pw')">👁</button>
+            </div>
+          </div>
+          <div class="auth-field">
+            <label class="auth-label">Confirmer le mot de passe</label>
+            <div class="auth-pw-wrap">
+              <input type="password" id="auth-reset-pw2" class="auth-input" placeholder="Répétez le mot de passe" autocomplete="new-password" style="padding-right:40px"/>
+              <button class="auth-pw-toggle" onclick="togglePw('auth-reset-pw2')">👁</button>
+            </div>
+          </div>
+          <button class="auth-btn" id="auth-reset-btn">Définir le mot de passe</button>
+        </div>
+
       </div>
       <div style="font-size:12px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.7;margin-top:28px;">
         Pas encore membre ? <a href="https://www.juanrodz.com/pdp-olt?productQuantity=1" target="_blank" rel="noopener" style="color:#00e5cc;text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Rejoignez le Programme OLT</a><br>et accédez gratuitement à vie à OLT Tracker
@@ -6504,11 +6527,12 @@ function showStep(step) {
   document.getElementById('auth-step-email').style.display    = step === 'email'    ? '' : 'none';
   document.getElementById('auth-step-register').style.display = step === 'register' ? '' : 'none';
   document.getElementById('auth-step-login').style.display    = step === 'login'    ? '' : 'none';
+  document.getElementById('auth-step-reset').style.display    = step === 'reset'    ? '' : 'none';
   clearAuthErrors();
 }
 
 function clearAuthErrors() {
-  ['auth-error-email','auth-error-register','auth-error-login','auth-success-login'].forEach(id => {
+  ['auth-error-email','auth-error-register','auth-error-login','auth-success-login','auth-error-reset','auth-success-reset'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = ''; el.classList.remove('visible'); }
   });
@@ -6531,6 +6555,31 @@ function togglePw(inputId) {
 
 function hideAuthScreen() {
   document.getElementById('auth-screen').classList.remove('visible');
+}
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').classList.add('visible');
+}
+
+// Définit un nouveau mot de passe après clic sur le lien de réinitialisation (session de récupération active)
+async function handleResetPassword() {
+  clearAuthErrors();
+  const pw  = document.getElementById('auth-reset-pw').value;
+  const pw2 = document.getElementById('auth-reset-pw2').value;
+  const btn = document.getElementById('auth-reset-btn');
+  if (pw.length < 8) { showError('auth-error-reset', 'Le mot de passe doit contenir au moins 8 caractères.'); return; }
+  if (pw !== pw2)    { showError('auth-error-reset', 'Les mots de passe ne correspondent pas.'); return; }
+  btn.disabled = true; btn.textContent = 'Mise à jour…';
+  const { error } = await supa.auth.updateUser({ password: pw });
+  if (error) {
+    showError('auth-error-reset', error.message);
+    btn.disabled = false; btn.textContent = 'Définir le mot de passe';
+    return;
+  }
+  showSuccess('auth-success-reset', '✓ Mot de passe mis à jour ! Accès en cours…');
+  // Nettoie le hash de récupération de l'URL
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+  setTimeout(() => hideAuthScreen(), 900);
 }
 
 // Step 1 — check email
@@ -6662,9 +6711,31 @@ document.getElementById('auth-login-pw').addEventListener('keydown', e => { if (
 document.getElementById('auth-email-btn').addEventListener('click', handleEmailStep);
 document.getElementById('auth-register-btn').addEventListener('click', handleRegister);
 document.getElementById('auth-login-btn').addEventListener('click', handleLogin);
+document.getElementById('auth-reset-btn').addEventListener('click', handleResetPassword);
+
+// Arrivée via un lien de réinitialisation (#...type=recovery) → écran "nouveau mot de passe"
+// (capturé sur le hash avant que Supabase ne le consomme, + via l'event PASSWORD_RECOVERY)
+let recoveryMode = window.location.hash.includes('type=recovery');
+const _authLinkErr = /error_code=([a-z_]+)/.exec(window.location.hash);
+supa.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    recoveryMode = true;
+    showAuthScreen();
+    showStep('reset');
+  }
+});
 
 // Check existing session on load
 (async () => {
+  if (recoveryMode) { showAuthScreen(); showStep('reset'); return; } // ne pas auto-connecter : laisser définir le mdp
+  if (_authLinkErr) { // lien de réinitialisation expiré/invalide → message clair
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showAuthScreen(); showStep('email');
+    showError('auth-error-email', _authLinkErr[1] === 'otp_expired'
+      ? 'Le lien de réinitialisation a expiré. Veuillez en redemander un nouveau.'
+      : 'Lien invalide ou expiré. Veuillez réessayer.');
+    return;
+  }
   const { data: { session } } = await supa.auth.getSession();
   if (session) {
     try {
