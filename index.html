@@ -4505,6 +4505,7 @@ function ibParseXML(xmlText) {
     deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
     depositsByMonth: {}, // { 'YYYY-MM': montant } — pour le capital en début de mois
     closedContracts: [], // exercices/assignations détectés → pour badge "EXERCISED"/"ASSIGNED"
+    strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) détectés via conid
     cashTxDetails: [],
     twr: null,
     flexFromDate: '', flexToDate: '', // populated below from FlexStatement attributes
@@ -4768,6 +4769,41 @@ function ibParseXML(xmlText) {
       // IB returns TWR as decimal (0.0695 = 6.95%) — convert to %
       result.twr = Math.abs(twrRaw) < 2 ? +(twrRaw * 100).toFixed(2) : +twrRaw.toFixed(2);
     }
+  }
+
+  // ── Ajustements de strike (dividende exceptionnel) via conid : le conid reste stable,
+  // seul le strike change (ex. MAIN 50 P → 49.7 P, conid 883250385). On compare le strike
+  // des trades à celui de la position ouverte (canonique) de même conid, puis on remappe.
+  const _openByConid = {};
+  doc.querySelectorAll('OpenPosition').forEach(op => {
+    const conid = op.getAttribute('conid');
+    const pc = (op.getAttribute('putCall') || '').toUpperCase();
+    if (!conid || !pc) return; // options seulement
+    _openByConid[conid] = {
+      ticker: (op.getAttribute('underlyingSymbol') || '').trim() || (op.getAttribute('symbol') || '').replace(/\s.*/, ''),
+      type: pc === 'C' ? 'C' : 'P',
+      strike: parseFloat(op.getAttribute('strike')) || 0,
+      expiry: normDate(op.getAttribute('expiry') || ''),
+    };
+  });
+  [...doc.querySelectorAll('Trade'), ...doc.querySelectorAll('TradeConfirm')].forEach(tr => {
+    const conid = tr.getAttribute('conid');
+    const cur = conid && _openByConid[conid];
+    if (!cur) return;
+    const tStrike = parseFloat(tr.getAttribute('strike')) || 0;
+    const tExpiry = normDate(tr.getAttribute('expiry') || '');
+    if (tStrike && cur.strike && Math.abs(tStrike - cur.strike) > 0.0001 && tExpiry === cur.expiry && cur.ticker
+        && !result.strikeAdjustments.some(a => a.ticker === cur.ticker && a.type === cur.type && a.expiry === cur.expiry && Math.abs(a.oldStrike - tStrike) < 0.0001)) {
+      result.strikeAdjustments.push({ ticker: cur.ticker, type: cur.type, expiry: cur.expiry, oldStrike: tStrike, newStrike: cur.strike });
+    }
+  });
+  // Applique aux trades parsés AVANT la réconciliation (le strike d'ouverture est l'ancien)
+  if (result.strikeAdjustments.length) {
+    result.trades.forEach(t => {
+      const adj = result.strikeAdjustments.find(a =>
+        a.ticker === t.ticker && a.type === t.type && a.expiry === t.expiry && Math.abs(a.oldStrike - t.strike) < 0.0001);
+      if (adj) t.strike = adj.newStrike;
+    });
   }
 
   // Reconcile status against open positions
