@@ -3285,25 +3285,31 @@ async function fetchYahooQuote(sym) {
 }
 
 async function fetchPrice(ticker, ccy) {
+  // Le cours doit correspondre à la DEVISE de la position → évite les collisions de tickers
+  // (ex. CFR US = Cullen/Frost en USD vs CFR.SW = Richemont en CHF). Si la position est en
+  // USD ou sans devise connue, on accepte n'importe quelle devise.
+  const ccyMatches = q => !!q && (!ccy || ccy === 'USD' || !q.currency || _normCcy(q.currency) === _normCcy(ccy));
+
   // 1. Symbole connu (override manuel > cache auto > règle HK > ticker nu)
   const known = yahooSymbol(ticker);
-  let q = await fetchYahooQuote(known);
-  if (q) return q.price;
+  const q = await fetchYahooQuote(known);
+  if (ccyMatches(q)) return q.price;
 
-  // 2. Échec + devise non-USD + ticker nu → on teste les suffixes de place de la devise
+  // 2. Devise non-USD : le nu a échoué OU renvoyé la mauvaise devise → tester les suffixes de place
   if (ccy && ccy !== 'USD' && known === ticker) {
     const suffixes = YAHOO_SUFFIXES[_normCcy(ccy)] || [];
     for (const suf of suffixes) {
       const cand = ticker + suf;
-      q = await fetchYahooQuote(cand);
+      const qc = await fetchYahooQuote(cand);
       // on exige la bonne devise (GBp≈GBP) pour éviter un faux match sur une autre place
-      if (q && (!q.currency || _normCcy(q.currency) === _normCcy(ccy))) {
+      if (qc && (!qc.currency || _normCcy(qc.currency) === _normCcy(ccy))) {
         resolvedYahoo[ticker] = cand;  // mémorise la résolution
         saveAppData();                  // persiste le cache
-        return q.price;
+        return qc.price;
       }
     }
   }
+  // Aucun cours dans la bonne devise → ne PAS renvoyer le cours d'un autre titre (éviterait un faux ITM).
   return null;
 }
 
