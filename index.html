@@ -4815,6 +4815,18 @@ function ibMergeData(parsed) {
   // quantité/le montant — sans ça, le 2e fill était supprimé à tort comme doublon.
   const crossKeyTime = t => `${t.date}|${t.time || ''}|${normTicker(t.ticker)}|${t.type}|${t.strike}|${t.expiry}|${t.action}|${t.qty}|${Math.round(((t.premiumOrig ?? t.premiumCollected) || 0) * 100)}`;
 
+  // Ajustements de strike (dividende exceptionnel) : remap des trades DÉJÀ stockés vers le
+  // nouveau strike AVANT la dédup, pour qu'ils correspondent aux trades parsés (déjà remappés)
+  // et à la réconciliation contre les positions ouvertes. (ex. MAIN 50 P → 49.7 P)
+  (parsed.strikeAdjustments || []).forEach(adj => {
+    transactions.forEach(t => {
+      if (normTicker(t.ticker) === normTicker(adj.ticker) && t.type === adj.type &&
+          t.expiry === adj.expiry && Math.abs(t.strike - adj.oldStrike) < 0.0001) {
+        t.strike = adj.newStrike;
+      }
+    });
+  });
+
   parsed.trades.forEach(t => {
     // Dedup niveau 1 : transactionID exact (XML↔XML)
     if (t.transactionID) {
@@ -5650,6 +5662,7 @@ function ibParseCSV(csvText) {
     nav: null, cash: null, accountId: null, errors: [],
     deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
     cashTxDetails: [],
+    strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) : {ticker,type,expiry,oldStrike,newStrike}
   };
 
   // Parse CSV line respecting quoted fields
@@ -5746,6 +5759,41 @@ function ibParseCSV(csvText) {
       if (fullSym   && !symbolMultiplier[fullSym])    symbolMultiplier[fullSym]    = mult;
     }
   });
+
+  // ── Ajustements de strike (dividende exceptionnel) : IBKR liste les DEUX symboles OCC
+  // (ancien + nouveau) pour le même contrat dans "Informations instrument financier".
+  // Ex: "MAIN 260717P00049700, MAIN 260717P00050000" → strike courant 49.7, ancien 50 → map 50→49.7.
+  // Colonnes après slice(2) : [1]=Symbole(s), [4]=Underlying, [7]=Expiration, [9]=Type, [10]=Prix de levée
+  lines.forEach(line => {
+    if (!line.startsWith('Informations instrument financier,Data,')) return;
+    const f = parseLine(line).slice(2);
+    const symField = (f[1] || '').trim();
+    if (!symField.includes(',')) return; // un seul symbole OCC = pas d'ajustement
+    // On parse la Description (f[2], ex. "MAIN 17JUL26 49.7 P") via parseSymbol — même
+    // format/normalisation que les trades → garantit le matching ticker/type/expiry/strike.
+    const ps = parseSymbol((f[2] || '').trim());
+    if (!ps) return;
+    const newK = ps.strike;
+    const type = ps.putCall === 'C' ? 'C' : 'P';
+    symField.split(',').forEach(occ => {
+      const m = /[CP](\d{8})\s*$/.exec(occ.trim());
+      if (!m) return;
+      const oldK = parseInt(m[1], 10) / 1000;
+      if (oldK && Math.abs(oldK - newK) > 0.0001) {
+        result.strikeAdjustments.push({ ticker: ps.ticker, type, expiry: ps.expiry, oldStrike: oldK, newStrike: newK });
+      }
+    });
+  });
+
+  // Applique les ajustements aux trades parsés (le strike d'ouverture est l'ancien)
+  if (result.strikeAdjustments.length) {
+    result.trades.forEach(t => {
+      const adj = result.strikeAdjustments.find(a =>
+        a.ticker === t.ticker && a.type === t.type && a.expiry === t.expiry &&
+        Math.abs(a.oldStrike - t.strike) < 0.0001);
+      if (adj) t.strike = adj.newStrike;
+    });
+  }
 
   // ── Extract FX rates from Forex transactions
   // Format: Transactions,Data,Order,Forex,{CCY},{BASE}.{CCY},{date},{qty},{price},...
