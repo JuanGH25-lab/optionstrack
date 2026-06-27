@@ -3600,7 +3600,7 @@ function renderPositions() {
                 const tc = urgencyText(days);
                 return `<th style="text-align:center;padding:8px 14px;background:${bg};border:1px solid ${border};border-radius:7px;min-width:130px">
                   <div style="font-size:12px;font-weight:600;color:${tc}">${expLabel(e)}</div>
-                  <div style="font-size:10px;color:${tc};opacity:0.8;margin-top:2px">${days<=7?'⚠ ':''}${days}d · ${(tickersByExpiry[e]||[]).length} pos.</div>
+                  <div style="font-size:10px;color:${tc};opacity:0.8;margin-top:2px">${days<=7?'⚠ ':''}${days}d · ${new Set((tickersByExpiry[e]||[]).map(t => `${t.ticker}|${t.type}|${t.strike}`)).size} pos.</div>
                 </th>`;
               }).join('')}
             </tr>
