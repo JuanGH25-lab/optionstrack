@@ -5883,25 +5883,34 @@ function ibParseCSV(csvText) {
   const txHeaderLine = lines.find(l => l.startsWith('Transactions,Header,'));
   if (txHeaderLine && txLines.length > 0) {
     const hFields = parseLine(txHeaderLine).slice(2); // skip "Transactions,Header,"
-    // hFields: DataDiscriminator,Catégorie d'actifs,Devise,Symbole,Date/Heure,Quantité,Prix trans.,Cours de clôt.,Produit,Comm/Tarif,Base,P/L réalisé,P/L MTM,Code
+    // Localise chaque colonne par son NOM (via l'en-tête) plutôt que par un indice fixe.
+    // Certains relevés (ex. 2021) insèrent une colonne "Compte" après "Devise" → tout décalé.
+    // Repli sur les indices historiques si la colonne n'est pas trouvée (compat EN/anciens).
+    const _ci = (re, fb) => { const i = hFields.findIndex(h => re.test(h.trim().toLowerCase())); return i >= 0 ? i : fb; };
+    const iCateg = _ci(/cat[ée]gorie|category/, 1);
+    const iCcy   = _ci(/devise|currency/, 2);
+    const iSym   = _ci(/symbole|symbol/, 3);
+    const iDate  = _ci(/date/, 4);
+    const iQty   = _ci(/quantit/, 5);
+    const iPrice = _ci(/prix|t\.? ?price/, 6);
+    const iProc  = _ci(/produit|proceeds/, 8);
+    const iComm  = _ci(/comm/, 9);
+    const iCode  = _ci(/^code$/, 13);
 
     txLines.forEach(line => {
       const f = parseLine(line).slice(2); // skip "Transactions,Data,"
-      // f[0]=Order, f[1]=Catégorie, f[2]=Devise, f[3]=Symbole, f[4]=Date/Heure,
-      // f[5]=Quantité, f[6]=Prix trans., f[7]=Cours clôt., f[8]=Produit,
-      // f[9]=Comm/Tarif, f[10]=Base, f[11]=P/L réalisé, f[12]=P/L MTM, f[13]=Code
 
-      const categ   = f[1] || '';
+      const categ   = f[iCateg] || '';
       if (!categ.toLowerCase().includes('option')) return;
 
-      const currency = f[2] || 'USD';
-      const symbol   = f[3] || '';
-      const dtStr    = f[4] || '';
-      const qty      = parseFloat((f[5] || '0').replace(/,/g,'')) || 0;
-      const price    = parseFloat((f[6] || '0').replace(/,/g,'')) || 0;
-      const proceeds = parseFloat((f[8] || '0').replace(/,/g,'')) || 0;
-      const commFee  = parseFloat((f[9] || '0').replace(/,/g,'')) || 0;
-      const code     = f[13] || '';
+      const currency = f[iCcy] || 'USD';
+      const symbol   = f[iSym] || '';
+      const dtStr    = f[iDate] || '';
+      const qty      = parseFloat((f[iQty] || '0').replace(/,/g,'')) || 0;
+      const price    = parseFloat((f[iPrice] || '0').replace(/,/g,'')) || 0;
+      const proceeds = parseFloat((f[iProc] || '0').replace(/,/g,'')) || 0;
+      const commFee  = parseFloat((f[iComm] || '0').replace(/,/g,'')) || 0;
+      const code     = f[iCode] || '';
       // Multiplier — look for "Mult" column in header, fallback to 100
       const multIdx  = hFields.findIndex(h => /^mult/i.test(h.trim()));
       const csvMult  = multIdx >= 0 ? parseFloat((f[multIdx] || '100').replace(/,/g,'')) || 100 : 100;
