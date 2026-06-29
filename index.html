@@ -684,8 +684,15 @@ const accountKPI = {
 
 // Returns the KPI values for the currently selected year
 function currentKPI() {
+  // Dépôts bruts / retraits filtrés par période (clés _depositsGross_YYYY / _withdrawals_YYYY)
+  const sumKeys = (prefix, filt) => Object.keys(accountKPI)
+    .filter(k => k.startsWith(prefix)).filter(filt).reduce((s, k) => s + accountKPI[k], 0);
   if (currentYear !== 'ALL' && accountKPI.byYear[currentYear]) {
-    return accountKPI.byYear[currentYear];
+    return {
+      ...accountKPI.byYear[currentYear],
+      depositsGross: sumKeys('_depositsGross_', k => k === `_depositsGross_${currentYear}`),
+      withdrawals:   sumKeys('_withdrawals_',   k => k === `_withdrawals_${currentYear}`),
+    };
   }
   // For ALL: recompute interest/deposits from per-year keys in case byYear was updated
   // without going through the main accumulators (e.g. after multiple imports)
@@ -697,6 +704,8 @@ function currentKPI() {
     navStart:    accountKPI.navStart,
     navEnd:      accountKPI.navEnd,
     deposited,
+    depositsGross: sumKeys('_depositsGross_', () => true),
+    withdrawals:   sumKeys('_withdrawals_',   () => true),
     twr:         accountKPI.twrReturn,
     interest,
     commissions: accountKPI.commissions,
@@ -1664,8 +1673,9 @@ function renderDashboard() {
         <div class="db-kpi-sub">nettes de frais</div>
       </div>
       <div class="db-kpi">
-        <div class="db-kpi-label">Cash déposé (période)</div>
+        <div class="db-kpi-label">Cash déposé (net)</div>
         <div class="db-kpi-val" style="color:#f0c27f">${currentKPI().deposited > 0 ? fmt(currentKPI().deposited) : '—'}</div>
+        <div class="db-kpi-sub" style="margin-bottom:2px">Dépôts - Retraits</div>
         <div class="db-kpi-sub">Intérêts: ${interestDisplay !== 0 ? `<span style="color:#00e5cc">${fmt(interestDisplay)}</span>` : '—'}</div>
       </div>
       <div class="db-kpi">
@@ -4505,7 +4515,7 @@ function ibParseXML(xmlText) {
   const result = {
     trades: [], openPositions: [],
     nav: null, cash: null, accountId: null, accountName: null, errors: [],
-    deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
+    deposits: 0, withdrawals: 0, depositsGross: 0, interest: 0, commissions: 0,
     depositsByMonth: {}, // { 'YYYY-MM': montant } — pour le capital en début de mois
     closedContracts: [], // exercices/assignations détectés → pour badge "EXERCISED"/"ASSIGNED"
     strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) détectés via conid
@@ -4688,14 +4698,15 @@ function ibParseXML(xmlText) {
     // Deposits/Withdrawals ignored here — StatementOfFundsLine is authoritative
   });
 
-  // Deposits from StatementOfFundsLine with activityCode="DEP"
-  // IB creates 2 lines per deposit: one in original currency, one in base USD
-  // We only want the USD base line (fxRateToBase=1 and currency=USD)
-  // IMPORTANT: filter by the flex query period to avoid summing deposits from prior years
+  // Deposits/Withdrawals from StatementOfFundsLine : activityCode "DEP" (dépôts, +)
+  // ET "WITH" (retraits, montant négatif). Les retraits se nettent donc automatiquement
+  // dans result.deposits → "Cash déposé" = flux net (dépôts − retraits).
+  // IB creates 2 lines per mouvement: one in original currency, one in base — on ne garde
+  // que "BaseCurrency" pour éviter le double comptage.
   const seenDepositTxIds = new Set();
   doc.querySelectorAll('StatementOfFundsLine').forEach(node => {
-    const code = node.getAttribute('activityCode') || '';
-    if (code !== 'DEP') return;
+    const code = (node.getAttribute('activityCode') || '').toUpperCase();
+    if (code !== 'DEP' && code !== 'WITH') return;
     // IB generates two lines per deposit: levelOfDetail="BaseCurrency" + levelOfDetail="Currency"
     // Only process "BaseCurrency" to avoid double-counting
     const levelOfDetail = node.getAttribute('levelOfDetail') || '';
@@ -4710,7 +4721,9 @@ function ibParseXML(xmlText) {
     if (flexTo   && depDate && depDate > flexTo)   return;
     if (txId && seenDepositTxIds.has(txId)) return;
     if (txId) seenDepositTxIds.add(txId);
-    result.deposits += amount;
+    result.deposits += amount; // net (dépôts + retraits signés)
+    if (code === 'DEP') result.depositsGross += amount;   // dépôts bruts (+)
+    else                result.withdrawals  += amount;    // retraits "WITH" (montant négatif)
     // Ventilation mensuelle (le jour exact n'importe pas pour le capital en début de mois)
     if (depDate && depDate.length >= 7) {
       const mo = depDate.slice(0, 7);
@@ -4954,6 +4967,13 @@ function ibMergeData(parsed) {
       .filter(k => k.startsWith('_deposits_'))
       .reduce((s, k) => s + accountKPI[k], 0);
     kpiUpdates.deposited = parsed.deposits;
+  }
+  // Dépôts BRUTS et RETRAITS séparés (pour l'affichage détaillé sous le net). Replace par année.
+  if (parsed.depositsGross > 0 || parsed.withdrawals < 0) {
+    accountKPI[`_depositsGross_${mostRecentYear}`] = parsed.depositsGross || 0;
+    accountKPI[`_withdrawals_${mostRecentYear}`]   = parsed.withdrawals || 0;
+    accountKPI.depositsGross = Object.keys(accountKPI).filter(k => k.startsWith('_depositsGross_')).reduce((s, k) => s + accountKPI[k], 0);
+    accountKPI.withdrawals   = Object.keys(accountKPI).filter(k => k.startsWith('_withdrawals_')).reduce((s, k) => s + accountKPI[k], 0);
   }
   // Ventilation MENSUELLE des dépôts (pour le capital en début de mois).
   // Replace par mois (idempotent sur ré-import) — additif, n'affecte pas les totaux annuels.
@@ -6265,12 +6285,19 @@ function deleteSelectedYears() {
     }
   }
 
-  // Remove accountKPI.byYear entries for those years
+  // Remove accountKPI.byYear entries + clés par année (dont dépôts bruts/retraits)
   checked.forEach(yr => {
     if (accountKPI.byYear && accountKPI.byYear[yr]) {
       delete accountKPI.byYear[yr];
     }
+    delete accountKPI[`_depositsGross_${yr}`];
+    delete accountKPI[`_withdrawals_${yr}`];
+    Object.keys(accountKPI)
+      .filter(k => k.startsWith(`_depositsM_${yr}-`))
+      .forEach(k => delete accountKPI[k]);
   });
+  accountKPI.depositsGross = Object.keys(accountKPI).filter(k => k.startsWith('_depositsGross_')).reduce((s, k) => s + accountKPI[k], 0);
+  accountKPI.withdrawals   = Object.keys(accountKPI).filter(k => k.startsWith('_withdrawals_')).reduce((s, k) => s + accountKPI[k], 0);
 
   // Recompute aggregate KPIs from remaining byYear entries
   const remainingYears = Object.values(accountKPI.byYear || {});
