@@ -5027,11 +5027,16 @@ function ibMergeData(parsed) {
 
   // ── Reconcile open/closed status across ALL transactions using this import's open positions
   if (parsed.openPositions.length > 0) {
+    // Année la plus récente couverte par cet import. On reconcilie toute position ouverte
+    // à/AVANT cette période (même si son échéance tombe une année plus tard) — sinon une
+    // position vendue en 2025, échéance 2027, rachetée via le relevé 2026 n'était jamais
+    // fermée (ni 2025 ni 2027 ≠ 2026). On NE touche PAS aux positions ouvertes APRÈS l'import
+    // (évite qu'un vieux relevé, ex. 2021, ferme à tort des positions ouvertes en 2026).
+    const maxImportedYear = importedYears[importedYears.length - 1];
     transactions.forEach(t => {
       if (t.status !== 'Open') return;
       if (t.action !== 'SELL' && !(t.action === 'BUY' && !t.assigned)) return;
-      // If the expiry year matches this import's year, check against open positions
-      if (!importedYears.includes(t.expiry.slice(0,4)) && !importedYears.includes(t.date.slice(0,4))) return;
+      if (maxImportedYear && t.date.slice(0,4) > maxImportedYear) return;
       const stillOpen = parsed.openPositions.some(op =>
         normTicker(op.ticker) === normTicker(t.ticker) && op.type === t.type &&
         op.strike === t.strike && op.expiry === t.expiry
