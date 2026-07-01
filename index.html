@@ -4374,7 +4374,7 @@ function updateSidebarMeta() {
 
   if (name) {
     const sbName = document.getElementById('sb-name');
-    if (sbName) sbName.textContent = name;
+    if (sbName) sbName.textContent = accountIdHidden ? '•••••••' : name; // masqué avec le n° de compte (initiales conservées)
 
     // Initials from first + last word of name
     const parts = name.trim().split(/\s+/);
@@ -4410,6 +4410,11 @@ function toggleAccountId() {
 
   const sbId = document.getElementById('sb-account-id');
   if (sbId) sbId.textContent = display;
+
+  // Masquer/afficher aussi le prénom + nom (les initiales de l'avatar restent visibles)
+  const sbName = document.getElementById('sb-name');
+  const acctName = accountKPI._accountName || '';
+  if (sbName && acctName) sbName.textContent = accountIdHidden ? '•••••••' : acctName;
 
   const btn = document.getElementById('account-id-toggle');
   if (btn) btn.innerHTML = accountIdHidden ? eyeClosed : eyeOpen;
