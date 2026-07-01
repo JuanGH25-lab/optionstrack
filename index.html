@@ -718,10 +718,13 @@ const navTimeline = [];
 let BASE_CCY = 'USD';
 function ccySym(ccy) {
   const c = ccy || BASE_CCY;
+  if (c === 'USD') return '$';
   if (c === 'EUR') return '€';
   if (c === 'GBP') return '£';
   if (c === 'HKD') return 'HK$';
-  return '$';
+  if (c === 'CHF') return 'CHF ';
+  // Fallback : code devise + espace (CAD, AUD, JPY, SGD…) plutôt que '$' à tort.
+  return c ? c + ' ' : '$';
 }
 // Niveau 2 de la conversion FX : taux quotidiens BCE charges depuis fx-rates.js
 // (format CCY->USD, devises EUR/GBP/CAD/HKD, periode 2022->2026).
@@ -764,7 +767,7 @@ function toBase(amount, currency, date) {
 let liveFx = null; // ex: { EUR: 1.157, GBP: 1.34, CAD: 0.71, HKD: 0.128 }
 
 async function fetchLiveFx() {
-  const ccys = ['EUR', 'GBP', 'CAD', 'HKD'];
+  const ccys = ['EUR', 'GBP', 'CAD', 'HKD', 'CHF'];
   const out = {};
   await Promise.all(ccys.map(async c => {
     try {
