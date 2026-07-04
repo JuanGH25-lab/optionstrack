@@ -692,6 +692,7 @@ function currentKPI() {
       ...accountKPI.byYear[currentYear],
       depositsGross: sumKeys('_depositsGross_', k => k === `_depositsGross_${currentYear}`),
       withdrawals:   sumKeys('_withdrawals_',   k => k === `_withdrawals_${currentYear}`),
+      transfers:     sumKeys('_transfers_',     k => k === `_transfers_${currentYear}`),
     };
   }
   // For ALL: recompute interest/deposits from per-year keys in case byYear was updated
@@ -706,6 +707,7 @@ function currentKPI() {
     deposited,
     depositsGross: sumKeys('_depositsGross_', () => true),
     withdrawals:   sumKeys('_withdrawals_',   () => true),
+    transfers:     sumKeys('_transfers_',     () => true),
     twr:         accountKPI.twrReturn,
     interest,
     commissions: accountKPI.commissions,
@@ -1592,7 +1594,8 @@ function renderDashboard() {
   const monthlyPrem = transactions
     .filter(t => t.date.startsWith(thisMonth))
     .reduce((s,t) => s + txNet(t), 0);
-  const navChg = nav - currentKPI().navStart - currentKPI().deposited;
+  // « hors apports » = hors dépôts cash ET hors transferts de titres (capital apporté en nature)
+  const navChg = nav - currentKPI().navStart - currentKPI().deposited - (currentKPI().transfers || 0);
 
   // Build period label from actual data
   const dates = transactions.map(t => t.date).sort();
@@ -1668,7 +1671,7 @@ function renderDashboard() {
       <div class="db-kpi">
         <div class="db-kpi-label">Valeur Liq. Nette</div>
         <div class="db-kpi-val" style="color:#00e5cc">${nav > 0 ? fmt(nav) : '—'}</div>
-        <div class="db-kpi-sub" style="color:${navChg>=0?'#00e5cc':'#f85149'}">${nav > 0 ? (navChg>=0?'▲':'▼') + ' ' + fmt(Math.abs(navChg)) + ' excl. dépôts' : 'Importez un relevé IB'}</div>
+        <div class="db-kpi-sub" style="color:${navChg>=0?'#00e5cc':'#f85149'}">${nav > 0 ? (navChg>=0?'▲':'▼') + ' ' + fmt(Math.abs(navChg)) + (currentKPI().transfers ? ' excl. apports' : ' excl. dépôts') : 'Importez un relevé IB'}</div>
       </div>
       <div class="db-kpi">
         <div class="db-kpi-label">Primes collectées</div>
@@ -1677,8 +1680,9 @@ function renderDashboard() {
       </div>
       <div class="db-kpi">
         <div class="db-kpi-label">Cash déposé (net)</div>
-        <div class="db-kpi-val" style="color:#f0c27f">${currentKPI().deposited > 0 ? fmt(currentKPI().deposited) : '—'}</div>
+        <div class="db-kpi-val" style="color:#f0c27f">${currentKPI().deposited !== 0 ? fmt(currentKPI().deposited) : '—'}</div>
         <div class="db-kpi-sub" style="margin-bottom:2px">Dépôts - Retraits</div>
+        ${currentKPI().transfers ? `<div class="db-kpi-sub" style="margin-bottom:2px">Transferts titres: <span style="color:#f0c27f">${fmt(currentKPI().transfers)}</span></div>` : ''}
         <div class="db-kpi-sub">Intérêts: ${interestDisplay !== 0 ? `<span style="color:#00e5cc">${fmt(interestDisplay)}</span>` : '—'}</div>
       </div>
       <div class="db-kpi">
@@ -4523,7 +4527,7 @@ function ibParseXML(xmlText) {
   const result = {
     trades: [], openPositions: [],
     nav: null, cash: null, accountId: null, accountName: null, errors: [],
-    deposits: 0, withdrawals: 0, depositsGross: 0, interest: 0, commissions: 0,
+    deposits: 0, withdrawals: 0, depositsGross: 0, interest: 0, commissions: 0, transfers: 0,
     depositsByMonth: {}, // { 'YYYY-MM': montant } — pour le capital en début de mois
     closedContracts: [], // exercices/assignations détectés → pour badge "EXERCISED"/"ASSIGNED"
     strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) détectés via conid
@@ -4737,6 +4741,32 @@ function ibParseXML(xmlText) {
       const mo = depDate.slice(0, 7);
       result.depositsByMonth[mo] = (result.depositsByMonth[mo] || 0) + amount;
     }
+  });
+
+  // Transferts de TITRES (positions transférées entrantes/sortantes) — comptés comme APPORTS,
+  // valorisés à la valeur de marché en devise de base au jour du transfert (positionAmountInBase).
+  // Signés par direction (IN +, OUT −). NB : les transferts CASH restent en DEP/WITH ci-dessus.
+  const seenTransferIds = new Set();
+  doc.querySelectorAll('Transfer').forEach(node => {
+    const cat = (node.getAttribute('assetCategory') || '').toUpperCase();
+    if (cat === 'CASH') return; // les transferts cash sont déjà comptés en DEP/WITH
+    const dir = (node.getAttribute('direction') || '').toUpperCase();
+    const tDate = normDate(node.getAttribute('date') || node.getAttribute('reportDate') || '');
+    if (flexFrom && tDate && tDate < flexFrom) return;
+    if (flexTo   && tDate && tDate > flexTo)   return;
+    let val = parseFloat(node.getAttribute('positionAmountInBase'));
+    if (!val) {
+      const pa = parseFloat(node.getAttribute('positionAmount')) || 0;
+      const fx = parseFloat(node.getAttribute('fxRateToBase')) || 1;
+      val = pa * fx;
+    }
+    if (!val) return;
+    val = Math.abs(val) * (dir === 'OUT' ? -1 : 1);
+    const key = (node.getAttribute('transactionID') || node.getAttribute('transferId') ||
+                 `${node.getAttribute('symbol')||''}|${tDate}|${node.getAttribute('positionAmount')||''}`);
+    if (seenTransferIds.has(key)) return; // évite le double comptage Currency/BaseCurrency
+    seenTransferIds.add(key);
+    result.transfers += val;
   });
 
   // Priorité des sources d'intérêts (du plus précis au moins précis) :
@@ -4968,13 +4998,21 @@ function ibMergeData(parsed) {
 
   // Store deposits/interest/commissions per year — always REPLACE (=) never accumulate (+=)
   // This ensures re-syncing the same Flex Query doesn't double-count
-  if (parsed.deposits > 0) {
+  // ≠ 0 (pas > 0) : le net cash d'une année peut être négatif (retraits > dépôts).
+  if (parsed.deposits !== 0) {
     const depKey = `_deposits_${mostRecentYear}`;
     accountKPI[depKey] = parsed.deposits; // replace, not accumulate
     accountKPI.deposited = Object.keys(accountKPI)
       .filter(k => k.startsWith('_deposits_'))
       .reduce((s, k) => s + accountKPI[k], 0);
     kpiUpdates.deposited = parsed.deposits;
+  }
+  // Transferts de titres par année — REPLACE (idempotent sur ré-import). Comptés comme apports.
+  if (parsed.transfers && parsed.transfers !== 0) {
+    accountKPI[`_transfers_${mostRecentYear}`] = parsed.transfers;
+    accountKPI.transfers = Object.keys(accountKPI)
+      .filter(k => k.startsWith('_transfers_'))
+      .reduce((s, k) => s + accountKPI[k], 0);
   }
   // Dépôts BRUTS et RETRAITS séparés (pour l'affichage détaillé sous le net). Replace par année.
   if (parsed.depositsGross > 0 || parsed.withdrawals < 0) {
@@ -5732,7 +5770,7 @@ function ibParseCSV(csvText) {
   const result = {
     trades: [], openPositions: [],
     nav: null, cash: null, accountId: null, errors: [],
-    deposits: 0, withdrawals: 0, interest: 0, commissions: 0,
+    deposits: 0, withdrawals: 0, interest: 0, commissions: 0, transfers: 0,
     cashTxDetails: [],
     strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) : {ticker,type,expiry,oldStrike,newStrike}
   };
@@ -6072,10 +6110,28 @@ function ibParseCSV(csvText) {
     const f = parseLine(line);
     const key = f[2] || '';
     const val = parseFloat((f[3] || '0').replace(/,/g,'')) || 0;
-    if ((key === 'Dépôts et retraits' || key === 'Deposits & Withdrawals' || key === 'Deposits/Withdrawals') && val > 0) result.deposits = val;
+    // Net cash de la période (dépôts − retraits) : PEUT être négatif (année où l'on a plus
+    // retiré que déposé, ex. compte financé par transfert de titres). On capture donc ≠ 0.
+    if ((key === 'Dépôts et retraits' || key === 'Deposits & Withdrawals' || key === 'Deposits/Withdrawals') && val !== 0) result.deposits = val;
     if (key === 'Intérêt' || key === 'Interest') result.interest = val;
     if (key === 'Commissions') result.commissions = val;
+    // Transferts de TITRES (net) — comptés comme APPORTS au même titre que les dépôts.
+    if ((key === 'Transferts de positions' || key === 'Position Transfers' || key === 'Transfers') && val !== 0) result.transfers = val;
   });
+
+  // Fallback transferts : si la ligne nette du « Changements de l'actif net » est absente,
+  // on somme la section détaillée « Transferts » (Valeur de marché signée par Direction In/Out).
+  if (result.transfers === 0) {
+    lines.filter(l => l.startsWith('Transferts,Data,') || l.startsWith('Transfers,Data,')).forEach(line => {
+      const f = parseLine(line);
+      const cat = (f[2] || '').trim();
+      if (cat === '' || cat === 'Total') return; // ligne total ou vide
+      const dir = (f[7] || '').trim().toLowerCase(); // In / Out
+      const mv  = parseFloat((f[12] || '0').replace(/,/g,'')) || 0; // Valeur de marché
+      if (!mv) return;
+      result.transfers += Math.abs(mv) * (dir === 'out' ? -1 : 1);
+    });
+  }
 
   // Fallback from "Rapport trésorerie" (FR) / "Cash Report" (EN)
   if (result.deposits === 0) {
@@ -6305,12 +6361,15 @@ function deleteSelectedYears() {
     }
     delete accountKPI[`_depositsGross_${yr}`];
     delete accountKPI[`_withdrawals_${yr}`];
+    delete accountKPI[`_transfers_${yr}`];
+    delete accountKPI[`_deposits_${yr}`];
     Object.keys(accountKPI)
       .filter(k => k.startsWith(`_depositsM_${yr}-`))
       .forEach(k => delete accountKPI[k]);
   });
   accountKPI.depositsGross = Object.keys(accountKPI).filter(k => k.startsWith('_depositsGross_')).reduce((s, k) => s + accountKPI[k], 0);
   accountKPI.withdrawals   = Object.keys(accountKPI).filter(k => k.startsWith('_withdrawals_')).reduce((s, k) => s + accountKPI[k], 0);
+  accountKPI.transfers     = Object.keys(accountKPI).filter(k => k.startsWith('_transfers_')).reduce((s, k) => s + accountKPI[k], 0);
 
   // Recompute aggregate KPIs from remaining byYear entries
   const remainingYears = Object.values(accountKPI.byYear || {});
