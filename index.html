@@ -4961,15 +4961,42 @@ function ibMergeData(parsed) {
   // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
   markExpiredOptions();
 
-  // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED")
+  // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED").
+  // ASSIGNATION/EXERCICE PARTIEL : si le contrat est ENCORE présent dans les positions ouvertes
+  // IBKR (ex. 1 PUT assigné sur 3 → il reste -2), on ne ferme QUE la quantité disparue
+  // (total vendu ouvert − qté restante IBKR), fill entier par fill entier (les plus petits
+  // d'abord). On ne modifie JAMAIS les quantités (seulement statut/flag) → ré-import idempotent.
+  // Sinon on fermerait les 3 contrats à tort et la position ouverte disparaissait (bug Juan/VICI).
   (parsed.closedContracts || []).forEach(cc => {
-    transactions.forEach(t => {
-      if (normTicker(t.ticker) === normTicker(cc.ticker) && t.type === cc.type &&
-          t.strike === cc.strike && t.expiry === cc.expiry && t.date <= cc.date) {
-        if (t.status === 'Open') t.status = 'Closed';
-        if (cc.kind === 'exercised') t.exercised = true; else t.assigned = true;
-      }
-    });
+    const flag = cc.kind === 'exercised' ? 'exercised' : 'assigned';
+    const sameContract = t =>
+      normTicker(t.ticker) === normTicker(cc.ticker) && t.type === cc.type &&
+      t.strike === cc.strike && t.expiry === cc.expiry;
+    const openPos = (parsed.openPositions || []).find(op =>
+      normTicker(op.ticker) === normTicker(cc.ticker) && op.type === cc.type &&
+      op.strike === cc.strike && op.expiry === cc.expiry);
+    if (openPos) {
+      // Partiel : ne consommer que (total ouvert − qté restante IBKR). Reliquat non
+      // consommable en fills entiers → laissé ouvert (position visible, jamais sur-fermée).
+      const openSells = transactions
+        .filter(t => sameContract(t) && t.action === 'SELL' && t.status === 'Open' && t.date <= cc.date)
+        .sort((a, b) => (a.qty || 0) - (b.qty || 0));
+      let remaining = openSells.reduce((s, t) => s + (t.qty || 0), 0) - Math.abs(openPos.qty || 0);
+      openSells.forEach(t => {
+        if (remaining > 0 && (t.qty || 0) <= remaining) {
+          t.status = 'Closed'; t[flag] = true;
+          remaining -= (t.qty || 0);
+        }
+      });
+    } else {
+      // Clôture totale (comportement existant) — plus aucune position ouverte sur ce contrat.
+      transactions.forEach(t => {
+        if (sameContract(t) && t.date <= cc.date) {
+          if (t.status === 'Open') t.status = 'Closed';
+          t[flag] = true;
+        }
+      });
+    }
   });
 
   // ── Update accountKPI from IB data
