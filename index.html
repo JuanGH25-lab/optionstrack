@@ -336,7 +336,7 @@ tbody tr:hover{background:var(--surface2);}
 
 /* ── Badges ── */
 .tick{display:inline-block;background:rgba(31,111,235,0.12);color:var(--blue);border-radius:5px;padding:2px 7px;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;}
-.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.2px;}
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.2px;text-transform:uppercase;}
 .tag.c{background:rgba(46,160,67,0.14);color:var(--green);}
 .tag.p{background:rgba(248,81,73,0.14);color:var(--red);}
 .tag.open{background:rgba(31,111,235,0.14);color:var(--blue);}
@@ -1646,7 +1646,7 @@ function renderDashboard() {
       .db-rank-bar-bg { flex:1;height:3px;border-radius:2px;background:var(--card-border);overflow:hidden; }
       .db-rank-bar    { height:3px;border-radius:2px;background:#00e5cc; }
       .db-rank-val    { font-family:'DM Mono',monospace;font-size:12px;font-weight:700;color:#00e5cc;white-space:nowrap; }
-      .db-recent-tag  { display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace; }
+      .db-recent-tag  { display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase; }
       .db-tag-sell    { background:rgba(248,81,73,0.15);color:#f85149; }
       .db-tag-buy     { background:rgba(46,160,67,0.15);color:#2ea043; }
       .db-tag-put     { background:rgba(248,81,73,0.15);color:#f85149; }
@@ -1883,7 +1883,7 @@ function renderTransactions() {
       .tx-table tbody td { padding:9px 12px;vertical-align:middle; }
       .tx-table tbody td:first-child { padding-left:20px; }
       .tx-table tbody td:last-child  { padding-right:20px; }
-      .tx-tag { display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace; }
+      .tx-tag { display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase; }
       .tx-tick { display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#00e5cc;letter-spacing:0.3px;font-family:'DM Mono',monospace; }
       .tx-tick.fx { color:#c4b5fd;border-color:var(--card-border2);background:var(--tick-bg); }
     </style>
@@ -1971,9 +1971,7 @@ function renderTransactions() {
                 ${t.exercised
                   ? `<span class="tx-tag" style="background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
                   : t.action === 'SELL' && t.assigned
-                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e;cursor:pointer" title="Cliquer pour annuler l'assignation" onclick="event.stopPropagation();toggleAssigned('${t.id}')">ASSIGNED</span>`
-                  : t.action === 'SELL' && t.status === 'Expired'
-                  ? `<span class="tx-tag" style="background:${stBg};color:${stC};cursor:pointer" title="Cliquer pour marquer comme Assigned" onclick="event.stopPropagation();toggleAssigned('${t.id}')">${t.status}</span>`
+                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
                   : `<span class="tx-tag" style="background:${stBg};color:${stC}">${t.status}</span>`
                 }
               </div>
@@ -1996,36 +1994,6 @@ function renderTransactions() {
       </table>
       </div>
     </div>`;
-}
-
-function toggleAssigned(id) {
-  const t = transactions.find(x => String(x.id) === String(id));
-  if (!t || t.action !== 'SELL') return;
-  if (t.status === 'Expired') {
-    t.status = 'Closed';
-    t.assigned = true;
-  } else if (t.assigned) {
-    t.status = 'Expired';
-    t.assigned = false;
-  }
-  saveAppData();
-
-  // Rafraîchir le modal si ouvert
-  const modal = document.getElementById('stock-modal');
-  if (modal && modal.classList.contains('open')) {
-    const modalTicker = document.getElementById('modal-ticker')?.textContent;
-    if (modalTicker) openStockModal(modalTicker);
-  }
-
-  // Rafraîchir la liste en préservant la recherche
-  const searchInput = document.querySelector('.tx-search input');
-  const searchVal = searchInput ? searchInput.value : '';
-  renderTransactions();
-  attachContentListeners();
-  if (searchVal) {
-    const newInput = document.querySelector('.tx-search input');
-    if (newInput) { newInput.value = searchVal; filterTable(searchVal); }
-  }
 }
 
 function toggleRowDetail(id) {
@@ -4139,7 +4107,9 @@ function openStockModal(ticker) {
   const sectorInfo = getSectorInfo(ticker);
   document.getElementById('modal-name').textContent = sectorInfo?.company || ticker;
   document.getElementById('modal-sub').textContent = `${grouped.length} trades · ${modalCcy}${sectorInfo?.sector ? ' · ' + sectorInfo.sector : ''}`;
-  document.getElementById('modal-premium').textContent = fmt(net);
+  const modalPremiumEl = document.getElementById('modal-premium');
+  modalPremiumEl.textContent = fmt(net);
+  modalPremiumEl.style.color = net >= 0 ? '#2ecc71' : '#f85149'; // rouge si prime nette négative
   document.getElementById('modal-trades').textContent = grouped.length;
   const openEl = document.getElementById('modal-open');
   openEl.textContent = openCount>0 ? `${openCount}` : 'Aucune position ouverte';
@@ -4179,10 +4149,8 @@ function openStockModal(ticker) {
             ${t.exercised
               ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
               : t.action === 'SELL' && t.assigned
-              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e;cursor:pointer" title="Cliquer pour annuler l'assignation" onclick="event.stopPropagation();toggleAssigned('${t.id}')">ASSIGNED</span>`
-              : t.action === 'SELL' && t.status === 'Expired'
-              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagS(t.status)};cursor:pointer" title="Cliquer pour marquer comme Assigned" onclick="event.stopPropagation();toggleAssigned('${t.id}')">${t.status}</span>`
-              : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagS(t.status)}">${t.status}</span>`
+              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
+              : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;${tagS(t.status)}">${t.status}</span>`
             }
           </div>
         </td>
