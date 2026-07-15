@@ -3328,7 +3328,7 @@ async function refreshPricesAndRender() {
   }
   // Update last refresh indicator
   const el = document.getElementById('price-updated');
-  if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+  if (el) el.textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
 }
 
 function startPriceRefresh() {
@@ -3490,7 +3490,7 @@ function renderPositions() {
         </div>
         <div style="font-size:11px;color:var(--c-muted);font-family:'DM Mono',monospace;display:flex;align-items:center;gap:8px">
           <span id="price-updated" style="color:var(--c-dim);font-size:10px"></span>
-          <span>As of ${new Date().toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'})}</span>
+          <span>Au ${new Date().toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'})}</span>
         </div>
       </div>
 
