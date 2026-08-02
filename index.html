@@ -227,6 +227,8 @@
   --c-secondary:#a8bbd0;
   --c-muted:#7a9ab5;
   --c-dim:#4a6480;
+  --gold:#e3b341; /* PRU ajusté (primes encaissées) */
+  --deposit:#eede8a; /* Cash déposé — jaune pastel doux, distinct du doré des dividendes */
 }
 html.light {
   --bg:#f6f8fa; --surface:#ffffff; --surface2:#f0f2f5; --surface3:#e8ebef;
@@ -245,6 +247,8 @@ html.light {
   --c-secondary:#1e3a5f;
   --c-muted:#334e68;
   --c-dim:#4a6480;
+  --gold:#9a6700; /* PRU ajusté — doré lisible sur fond clair */
+  --deposit:#a8922e; /* Cash déposé — jaune pastel assombri, lisible sur fond clair (mode clair) */
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px;line-height:1.5;}
@@ -336,6 +340,8 @@ tbody tr:hover{background:var(--surface2);}
 
 /* ── Badges ── */
 .tick{display:inline-block;background:rgba(31,111,235,0.12);color:var(--blue);border-radius:5px;padding:2px 7px;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;}
+.tick.fx{background:rgba(196,181,253,0.15);color:#c4b5fd;}
+.tick.fx-oth{background:rgba(240,136,62,0.12);color:var(--orange);}
 .tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.2px;text-transform:uppercase;}
 .tag.c{background:rgba(46,160,67,0.14);color:var(--green);}
 .tag.p{background:rgba(248,81,73,0.14);color:var(--red);}
@@ -347,6 +353,7 @@ tbody tr:hover{background:var(--surface2);}
 .pill{display:inline-block;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:500;}
 .pill.eur{background:rgba(196,181,253,0.15);color:#c4b5fd;}
 .pill.usd{background:rgba(31,111,235,0.10);color:var(--blue);}
+.pill.hkd,.pill.gbp,.pill.chf,.pill.cad,.pill.jpy{background:rgba(240,136,62,0.12);color:var(--orange);}
 .mono{font-family:'DM Mono',monospace;}
 
 /* ── Ranking ── */
@@ -457,11 +464,15 @@ tbody tr:hover{background:var(--surface2);}
     <div class="nav-section">Vue d'ensemble</div>
     <div class="nav-item active" data-page="dashboard">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.5A1.5 1.5 0 011.5 0h3A1.5 1.5 0 016 1.5v3A1.5 1.5 0 014.5 6h-3A1.5 1.5 0 010 4.5v-3zm6.5 0A1.5 1.5 0 018 0h3A1.5 1.5 0 0112.5 1.5v3A1.5 1.5 0 0111 6H8A1.5 1.5 0 016.5 4.5v-3zm-6.5 6A1.5 1.5 0 011.5 6h3A1.5 1.5 0 016 7.5v3A1.5 1.5 0 014.5 12h-3A1.5 1.5 0 010 10.5v-3zm6.5 0A1.5 1.5 0 018 6h3a1.5 1.5 0 011.5 1.5v3A1.5 1.5 0 0111 12H8a1.5 1.5 0 01-1.5-1.5v-3z"/></svg>
-      Dashboard
+      Tableau de bord
     </div>
     <div class="nav-item" data-page="positions">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a.5.5 0 01.5.5v3h3a.5.5 0 010 1h-3v3a.5.5 0 01-1 0v-3h-3a.5.5 0 010-1h3v-3A.5.5 0 018 4z"/><path d="M14 1a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1h12zM2 0a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V2a2 2 0 00-2-2H2z"/></svg>
-      Open Positions
+      Positions Options
+    </div>
+    <div class="nav-item" data-page="equities">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 11a1 1 0 011-1h1a1 1 0 011 1v3a1 1 0 01-1 1H2a1 1 0 01-1-1v-3zm5-4a1 1 0 011-1h1a1 1 0 011 1v7a1 1 0 01-1 1H7a1 1 0 01-1-1V7zm5-5a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V2z"/></svg>
+      Actions & ETF
     </div>
     <div class="nav-item" data-page="transactions">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 4a.5.5 0 000 1h6a.5.5 0 000-1H5zm-.5 2.5A.5.5 0 015 6h6a.5.5 0 010 1H5a.5.5 0 01-.5-.5zM5 8a.5.5 0 000 1h6a.5.5 0 000-1H5zm0 2a.5.5 0 000 1h3a.5.5 0 000-1H5z"/><path d="M2 2a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V2zm10-1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V2a1 1 0 00-1-1z"/></svg>
@@ -499,7 +510,7 @@ tbody tr:hover{background:var(--surface2);}
 
 <div class="main">
   <div class="topbar">
-    <div><div class="topbar-title" id="page-title">Dashboard</div></div>
+    <div><div class="topbar-title" id="page-title">Tableau de bord</div></div>
     <div class="topbar-right">
       <div class="topbar-meta" id="topbar-meta">—</div>
       <div class="yr-tabs" id="yr-tabs"></div>
@@ -510,58 +521,13 @@ tbody tr:hover{background:var(--surface2);}
 </div>
 
 <!-- Stock Detail Modal -->
-<div class="modal-overlay" id="stock-modal">
-  <div class="modal" style="background:var(--card-surface);border:1px solid var(--card-border);border-radius:16px;max-width:1000px;width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
-    <!-- Header -->
-    <div style="padding:18px 22px;border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div style="display:flex;align-items:center;gap:12px">
-        <span id="modal-ticker" style="display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;color:#00e5cc;letter-spacing:0.3px;font-family:'DM Mono',monospace"></span>
-        <div>
-          <div style="font-weight:700;font-size:15px;color:var(--c-text);letter-spacing:-0.2px" id="modal-name"></div>
-          <div style="font-size:11px;color:var(--c-muted);margin-top:2px;font-family:'DM Mono',monospace" id="modal-sub"></div>
-        </div>
-      </div>
-      <button class="close-btn" id="close-modal-btn" style="background:var(--card-border);border:1px solid var(--card-border2);border-radius:8px;width:30px;height:30px;color:var(--c-muted);font-size:14px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center">✕</button>
-    </div>
-    <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--card-border);flex-shrink:0">
-      <div style="padding:16px 22px;border-right:1px solid var(--card-border)">
-        <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Premium Collecté (min. fees)</div>
-        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace;color:#2ecc71" id="modal-premium"></div>
-      </div>
-      <div style="padding:16px 22px;border-right:1px solid var(--card-border)">
-        <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total Trades</div>
-        <div style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace;color:var(--c-text)" id="modal-trades"></div>
-      </div>
-      <div style="padding:16px 22px">
-        <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Positions ouvertes</div>
-        <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace" id="modal-open"></div>
-      </div>
-    </div>
-    <!-- Table -->
-    <div style="overflow-y:auto;flex:1">
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr style="border-bottom:1px solid var(--card-border)">
-            <th style="padding:10px 18px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:left;background:var(--card-surface);position:sticky;top:0">Date</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--card-surface);position:sticky;top:0">Action</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--card-surface);position:sticky;top:0">Type</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--card-surface);position:sticky;top:0">Strike</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--card-surface);position:sticky;top:0">Expiry</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:center;background:var(--card-surface);position:sticky;top:0">Qty</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:right;background:var(--card-surface);position:sticky;top:0">Prem. Coll.</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:right;background:var(--card-surface);position:sticky;top:0">Fees</th>
-            <th style="padding:10px 10px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:right;background:var(--card-surface);position:sticky;top:0">Net Premium</th>
-            <th style="padding:10px 18px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--card-surface);position:sticky;top:0">Statut</th>
-          </tr>
-        </thead>
-        <tbody id="modal-tbody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
 <!-- Goal Modal -->
+<!-- V2 — Modale détail ticker Actions/ETF (contenu construit par openEquityModal) -->
+<div class="modal-overlay" id="equity-modal" onclick="if(event.target===this)closeEquityModal()">
+  <div class="modal" id="equity-modal-content" style="background:var(--card-surface);border:1px solid var(--card-border);border-radius:16px;max-width:1000px;width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden"></div>
+</div>
+
 <div class="modal-overlay" id="goal-modal">
   <div class="modal" style="width:380px">
     <div class="modal-head">
@@ -635,6 +601,22 @@ tbody tr:hover{background:var(--surface2);}
 let transactions = [];
 let expandedRows = new Set();
 let accountIdHidden = false;
+
+// ── V2 : positions actions/ETF (snapshot IBKR <OpenPosition assetCategory="STK">)
+// Remplacé en bloc à chaque import plus récent (voir ibMergeData) — pas un historique.
+let stockPositions = [];
+// V2 : trades actions/ETF — HISTORIQUE cumulé (dedup au merge), P&L réalisé FIFO d'IBKR.
+let stockTrades = [];
+// V2 : dividendes — HISTORIQUE cumulé (dedup au merge). Chaque entrée est un flux :
+// kind 'DIV' (versement brut, montant +) ou 'TAX' (retenue à la source, montant −),
+// appariés à l'affichage par ticker+date pour donner brut / retenue / net.
+let stockDividends = [];
+// V2 : coût ÉCONOMIQUE résiduel de la position ouverte par ticker (rempli par
+// computeStockEconPnl). { qty, cost, ok } — cost = coût d'achat RÉEL des titres encore
+// détenus (assignation = strike×qté, primes NON déduites, contrairement au costBasisPrice
+// d'IBKR). Sert au PRU des positions actuelles/modale + au P&L latent, cohérent avec le
+// P&L réalisé. ok=false → repli sur le costBasisPrice IBKR du snapshot.
+let stockEconBasis = {};
 
 // Ticker alias map — maps numeric conids or alternate symbols to canonical ticker names
 // Built dynamically during XML import (conid → underlyingSymbol)
@@ -727,6 +709,12 @@ function ccySym(ccy) {
   if (c === 'CHF') return 'CHF ';
   // Fallback : code devise + espace (CAD, AUD, JPY, SGD…) plutôt que '$' à tort.
   return c ? c + ' ' : '$';
+}
+// Classe couleur d'un ticker selon sa devise — cohérente avec les pills CCY :
+// USD = défaut (teal/bleu), EUR = violet ('fx'), autres devises = orange ('fx-oth').
+function tickCcyClass(ccy) {
+  if (!ccy || ccy === 'USD') return '';
+  return ccy === 'EUR' ? 'fx' : 'fx-oth';
 }
 // Niveau 2 de la conversion FX : taux quotidiens BCE charges depuis fx-rates.js
 // (format CCY->USD, devises EUR/GBP/CAD/HKD, periode 2022->2026).
@@ -947,47 +935,62 @@ function getStockStats() {
   return Object.values(map).sort((a,b) => b.premiumCollected - a.premiumCollected);
 }
 
-// ── Chart state (kept for legacy refs)
-// Premium mensuel (non cumulé) par mois
+// ── V2 : timeline des REVENUS MENSUELS PAR SOURCE — primes (txNet), P&L actions
+// ÉCONOMIQUE (jambe pure, cohérent avec le reste), dividendes nets, et dépôts mensuels
+// (_depositsM_YYYY-MM, alimentés par le XML ET les CSV). Mois continus (trous à zéro).
 function buildMonthlyTimeline() {
-  const monthlyPrem = {};
-  filteredTransactions().forEach(t => {
-    const m = t.date.slice(0,7);
-    monthlyPrem[m] = (monthlyPrem[m] || 0) + txNet(t);
+  computeStockEconPnl();
+  const inYear = s => currentYear === 'ALL' || s.startsWith(currentYear);
+  const prem = {}, stk = {}, div = {}, dep = {};
+  filteredTransactions().forEach(t => { const m = t.date.slice(0,7); prem[m] = (prem[m] || 0) + txNet(t); });
+  stockTrades.forEach(t => {
+    if (!(t.realizedPnl || (t._econOk && Math.abs(t._econPnl) > 0.005))) return;
+    if (!inYear(t.date)) return;
+    const m = t.date.slice(0,7); stk[m] = (stk[m] || 0) + stockDispPnlBase(t);
+  });
+  stockDividends.forEach(d => { if (!inYear(d.date)) return; const m = d.date.slice(0,7); div[m] = (div[m] || 0) + (d.amountBase || 0); });
+  Object.keys(accountKPI).forEach(k => {
+    if (!k.startsWith('_depositsM_')) return;
+    const m = k.slice('_depositsM_'.length);
+    if (inYear(m)) dep[m] = accountKPI[k];
   });
 
-  const filteredMonths = [...new Set(filteredTransactions().map(t => t.date.slice(0,7)))].sort();
-  if (filteredMonths.length === 0) return [];
+  const months = [...new Set([...Object.keys(prem), ...Object.keys(stk), ...Object.keys(div), ...Object.keys(dep)])].sort();
+  if (months.length === 0) return [];
+
+  // Plage continue du premier au dernier mois (les mois sans flux restent visibles à 0)
+  const range = [];
+  let [y, mo] = months[0].split('-').map(Number);
+  const last = months[months.length - 1];
+  let cur = months[0];
+  while (cur <= last) {
+    range.push(cur);
+    mo++; if (mo > 12) { mo = 1; y++; }
+    cur = y + '-' + String(mo).padStart(2, '0');
+  }
+
+  // Années sans ventilation mensuelle des dépôts (vieux imports non ré-importés) :
+  // repli sur le total annuel posé sur le premier mois de l'année (ancien comportement).
+  const yearsWithMonthly = new Set(Object.keys(dep).map(m => m.slice(0,4)));
+  const seenYearFallback = new Set();
+  range.forEach(m => {
+    const yr = m.slice(0,4);
+    if (yearsWithMonthly.has(yr) || seenYearFallback.has(yr)) return;
+    seenYearFallback.add(yr);
+    const annual = accountKPI[`_deposits_${yr}`] || 0;
+    if (annual && inYear(m)) dep[m] = (dep[m] || 0) + annual;
+  });
 
   const monthLabel = m => {
-    const [y, mo] = m.split('-');
     const names = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
-    return names[parseInt(mo)-1] + ' ' + y.slice(2);
+    return names[parseInt(m.slice(5,7)) - 1] + ' ' + m.slice(2,4);
   };
-
-  // Cumulative premium (running total)
-  let cumPrem = 0;
-
-  // For deposited: show year total on first month of that year
-  const yearFirstMonth = {};
-  filteredMonths.forEach(m => {
-    const yr = m.slice(0,4);
-    if (!yearFirstMonth[yr]) yearFirstMonth[yr] = m;
-  });
-
-  return filteredMonths.map(m => {
-    const yr = m.slice(0,4);
-    cumPrem += (monthlyPrem[m] || 0);
-    const isFirstMonthOfYear = yearFirstMonth[yr] === m;
-    const depositedVal = isFirstMonthOfYear ? (accountKPI[`_deposits_${yr}`] || 0) : 0;
-
-    return {
-      label:       monthLabel(m),
-      month:       m,
-      cumPrem:     Math.round(cumPrem * 100) / 100,
-      monthlyPrem: Math.round((monthlyPrem[m] || 0) * 100) / 100,
-      deposited:   depositedVal,
-    };
+  const r2 = v => Math.round(v * 100) / 100;
+  let cum = 0;
+  return range.map(m => {
+    const p = prem[m] || 0, s = stk[m] || 0, dv = div[m] || 0;
+    cum += p + s + dv;
+    return { month: m, label: monthLabel(m), prem: r2(p), stk: r2(s), div: r2(dv), dep: r2(dep[m] || 0), cum: r2(cum) };
   });
 }
 
@@ -1012,22 +1015,25 @@ function buildChart(tf) {
     return;
   }
 
-  // Premium bars get their OWN scale (deposits excluded) so small monthly
-  // premiums stay visible instead of being crushed by huge deposit spikes.
-  const premVals = pts.map(p => p.monthlyPrem || 0);
-  const rightMax = Math.max(1000, ...premVals.map(v => Math.abs(v))) * 1.4;
-  const rightMin = Math.min(0, ...premVals) * 1.4;
+  // Barres de REVENUS empilées (primes + P&L actions + dividendes) sur leur propre échelle
+  // (droite) — les gros dépôts ne doivent pas écraser les revenus mensuels.
+  const posMax = Math.max(1000, ...pts.map(p => Math.max(0, p.prem) + Math.max(0, p.stk) + Math.max(0, p.div)));
+  const negMin = Math.min(0,    ...pts.map(p => Math.min(0, p.prem) + Math.min(0, p.stk) + Math.min(0, p.div)));
+  const rightMax = posMax * 1.25;
+  const rightMin = negMin * 1.25;
 
-  // Deposits now share the LEFT axis with the cumulative line (same $ scale).
-  const leftMax = Math.max(
-    ...pts.map(p => p.cumPrem || 0),
-    ...pts.map(p => p.deposited || 0),
-    1000
-  ) * 1.2;
+  // Cumul + dépôts sur l'échelle de gauche (mêmes ordres de grandeur).
+  const leftMax = Math.max(...pts.map(p => p.cum || 0), ...pts.map(p => p.dep || 0), 1000) * 1.2;
+  // Aligne le ZÉRO des deux axes (même fraction négative) + place au cumul négatif éventuel.
+  const leftMin = Math.min(
+    Math.min(0, ...pts.map(p => p.cum || 0)) * 1.2,
+    rightMin < 0 ? leftMax * (rightMin / rightMax) : 0
+  );
 
-  // Align both axes' ZERO line: give the left axis the same negative fraction
-  // as the right one, so deposit bars and premium bars share one baseline.
-  const leftMin = rightMin < 0 ? leftMax * (rightMin / rightMax) : 0;
+  // Couleur des dépôts — jaune "soleil" (doit rester synchro avec --deposit). Hex direct
+  // comme les autres couleurs du chart (Chart.js ne résout pas les var() CSS de façon fiable).
+  const depColor = '#eede8a';
+  const depFill  = 'rgba(238,222,138,0.6)';
 
   const ctx = document.getElementById('mainChart').getContext('2d');
   if (ctx.canvas) { ctx.canvas.style.display = ''; const emp = ctx.canvas.parentElement?.querySelector('.chart-empty'); if(emp) emp.remove(); }
@@ -1038,39 +1044,52 @@ function buildChart(tf) {
       labels: pts.map(p => p.label),
       datasets: [
         {
-          type: 'line', label: 'Premium cumulé',
-          data: pts.map(p => p.cumPrem),
-          borderColor: '#00e5cc',
+          type: 'line', label: 'Revenus cumulés',
+          data: pts.map(p => p.cum),
+          borderColor: '#1f6feb',
           backgroundColor: (ctx2) => {
             const chart = ctx2.chart;
             const {ctx: c, chartArea} = chart;
-            if (!chartArea) return 'rgba(0,229,204,0.04)';
+            if (!chartArea) return 'rgba(31,111,235,0.04)';
             const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-            grad.addColorStop(0, 'rgba(0,229,204,0.18)');
-            grad.addColorStop(1, 'rgba(0,229,204,0.00)');
+            grad.addColorStop(0, 'rgba(31,111,235,0.16)');
+            grad.addColorStop(1, 'rgba(31,111,235,0.00)');
             return grad;
           },
-          borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#00e5cc',
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#1f6feb',
           pointBorderColor: 'var(--card-surface)', pointBorderWidth: 2,
-          pointHoverRadius: 6, pointHoverBackgroundColor: '#00e5cc',
+          pointHoverRadius: 6, pointHoverBackgroundColor: '#1f6feb',
           tension: 0.4, fill: true, yAxisID: 'yLeft',
-          spanGaps: true, hidden: hiddenSeries.has('nav'), order: 1,
+          spanGaps: true, hidden: hiddenSeries.has('cum'), order: 1,
         },
         {
-          type: 'bar', label: 'Premium mensuel',
-          data: pts.map(p => p.monthlyPrem || 0),
-          backgroundColor: pts.map(p => (p.monthlyPrem || 0) >= 0 ? 'rgba(46,204,113,0.7)' : 'rgba(248,81,73,0.7)'),
-          borderColor:     pts.map(p => (p.monthlyPrem || 0) >= 0 ? '#2ecc71' : '#f85149'),
-          borderWidth: 1, borderRadius: 5,
-          minBarLength: 4, maxBarThickness: 26,
-          yAxisID: 'yRight', hidden: hiddenSeries.has('premium'), order: 2,
+          type: 'bar', label: 'Primes options',
+          data: pts.map(p => p.prem),
+          backgroundColor: 'rgba(0,229,204,0.7)', borderColor: '#00e5cc',
+          borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('prem'), order: 2,
         },
         {
-          type: 'bar', label: 'Cash Deposited',
-          data: pts.map(p => p.deposited || 0),
-          backgroundColor: 'rgba(240,194,127,0.65)', borderColor: '#f0c27f',
-          borderWidth: 1, borderRadius: 5, maxBarThickness: 26,
-          yAxisID: 'yLeft', hidden: hiddenSeries.has('deposited'), order: 3,
+          type: 'bar', label: 'P&L actions',
+          data: pts.map(p => p.stk),
+          backgroundColor: pts.map(p => p.stk >= 0 ? 'rgba(46,204,113,0.7)' : 'rgba(248,81,73,0.7)'),
+          borderColor:     pts.map(p => p.stk >= 0 ? '#2ecc71' : '#f85149'),
+          borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('stk'), order: 2,
+        },
+        {
+          type: 'bar', label: 'Dividendes nets',
+          data: pts.map(p => p.div),
+          backgroundColor: 'rgba(227,179,65,0.75)', borderColor: '#e3b341',
+          borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('div'), order: 2,
+        },
+        {
+          type: 'bar', label: 'Dépôts',
+          data: pts.map(p => p.dep),
+          backgroundColor: depFill, borderColor: depColor,
+          borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
+          stack: 'dep', yAxisID: 'yLeft', hidden: hiddenSeries.has('dep'), order: 3,
         },
       ]
     },
@@ -1097,6 +1116,7 @@ function buildChart(tf) {
       },
       scales: {
         x: {
+          stacked: true, // empile les barres partageant le même `stack` (revenus vs dépôts)
           grid: {color: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)', lineWidth: 1},
           border: {color: 'var(--card-border)'},
           ticks: {color: document.documentElement.classList.contains('light') ? '#64748b' : '#e6edf3', font: {family: 'DM Mono', size: 11}},
@@ -1106,12 +1126,11 @@ function buildChart(tf) {
           min: leftMin, max: leftMax,
           grid: {color: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)', lineWidth: 1},
           border: {color: 'var(--card-border)', dash: [4,4]},
-          // Hide negative labels — the cumulative axis is never negative; the
-          // negative range exists only to align the zero line with the right axis.
-          ticks: {color: '#00e5cc', font: {family: 'DM Mono', size: 11}, callback: v => v < 0 ? '' : fmtK(v)},
+          // Labels négatifs masqués — la plage négative n'existe que pour aligner le zéro.
+          ticks: {color: '#1f6feb', font: {family: 'DM Mono', size: 11}, callback: v => v < 0 ? '' : fmtK(v)},
         },
         yRight: {
-          type: 'linear', position: 'right',
+          type: 'linear', position: 'right', stacked: true,
           min: rightMin, max: rightMax,
           grid: {display: false},
           border: {color: 'var(--card-border)'},
@@ -1127,7 +1146,8 @@ function toggleSeries(key, el) {
   if(hiddenSeries.has(key)) hiddenSeries.delete(key); else hiddenSeries.add(key);
   el.style.opacity = hiddenSeries.has(key) ? '0.35' : '1';
   if (!mainChart) return;
-  const idx = {nav:0,premium:1,deposited:2}[key];
+  const idx = {cum:0,prem:1,stk:2,div:3,dep:4}[key];
+  if (idx === undefined) return;
   mainChart.data.datasets[idx].hidden = hiddenSeries.has(key);
   mainChart.update();
 }
@@ -1145,8 +1165,8 @@ function toggleTheme() {
     mainChart.options.scales.x.grid.color     = gridColor;
     mainChart.options.scales.x.ticks.color    = tickColor;
     mainChart.options.scales.yLeft.grid.color  = gridColor;
-    mainChart.options.scales.yLeft.ticks.color = '#00e5cc';
-    mainChart.options.scales.yRight.ticks.color = '#00e5cc';
+    mainChart.options.scales.yLeft.ticks.color = '#1f6feb';
+    mainChart.options.scales.yRight.ticks.color = '#2ecc71';
     mainChart.update();
   }
 }
@@ -1158,6 +1178,11 @@ function attachContentListeners() {
   content.querySelectorAll('[data-ticker]').forEach(el => {
     el.style.cursor = 'pointer';
     el.addEventListener('click', () => openStockModal(el.dataset.ticker));
+  });
+  // V2 — lignes de la page Actions & ETF → modale equity (≠ modale options)
+  content.querySelectorAll('[data-eq-ticker]').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => openEquityModal(el.dataset.eqTicker));
   });
   updateExpiryBadge();
 }
@@ -1203,12 +1228,11 @@ function updateExpiryBadge() {
 // ── Pages
 function setPage(page) {
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const idx = {dashboard:0,positions:1,transactions:2,ranking:3,monthly:4,calculator:5,growth:6,ibconnect:7};
-  document.querySelectorAll('.nav-item')[idx[page]]?.classList.add('active');
-  const pt = document.getElementById('page-title'); if(pt) pt.textContent = {dashboard:'Dashboard',positions:'Open Positions',transactions:'Toutes les transactions',ranking:'Ranking',monthly:'Rapport Mensuel',calculator:'Calculateur',growth:'Objectifs & Croissance',ibconnect:'Connect IB Account'}[page]||'';
-  ({dashboard:renderDashboard,positions:renderPositions,transactions:renderTransactions,ranking:renderRanking,monthly:renderMonthly,ibconnect:renderIBConnect,calculator:renderCalculator,growth:renderGrowth}[page])();
+  document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
+  const pt = document.getElementById('page-title'); if(pt) pt.textContent = {dashboard:'Tableau de bord',positions:'Positions Options',equities:'Actions & ETF',transactions:'Toutes les transactions',ranking:'Ranking',monthly:'Rapport Mensuel',calculator:'Calculateur',growth:'Objectifs & Croissance',ibconnect:'Connect IB Account'}[page]||'';
+  ({dashboard:renderDashboard,positions:renderPositions,equities:renderEquities,transactions:renderTransactions,ranking:renderRanking,monthly:renderMonthly,ibconnect:renderIBConnect,calculator:renderCalculator,growth:renderGrowth}[page])();
   attachContentListeners();
-  if (page === 'positions' && positionsTab === 'list') {
+  if ((page === 'positions' && positionsTab === 'list') || page === 'equities') {
     refreshPricesAndRender();
     startPriceRefresh();
   }
@@ -1600,8 +1624,6 @@ function renderDashboard() {
   // Build period label from actual data
   const dates = transactions.map(t => t.date).sort();
   const fmtD = d => { const [y,m,day] = d.split('-'); const months=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']; return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`; };
-  const periodLabel = `${fmtD(dates[0])} – ${fmtD(dates[dates.length-1])}`;
-  const accountLabel = accountKPI._accountId ? `· Account <span class="account-id-display">${accountIdHidden ? '•••••••' : accountKPI._accountId}</span>` : '';
 
   // Compute fees + interest directly from filtered transactions (respects year filter)
   const feesFromTx = filteredTransactions().reduce((s,t) => s + toBase(t.fees||0, t.currency, t.date), 0);
@@ -1656,16 +1678,6 @@ function renderDashboard() {
       .db-tag-open    { background:rgba(31,111,235,0.15);color:#1f6feb; }
     </style>
 
-    <div class="db-notice">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="var(--c-muted)"><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm.93-9.412l-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 110-2 1 1 0 010 2z"/></svg>
-      ${accountLabel} · ${periodLabel}${(()=>{
-        const twr = currentKPI().twr;
-        if (!twr) return '';
-        const c = twr >= 0 ? '#00e5cc' : '#f85149';
-        return ` · TWR: <span style="color:${c};font-weight:700">${twr.toFixed(2)}%</span>`;
-      })()}
-    </div>
-
     <!-- KPI row -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
       <div class="db-kpi">
@@ -1680,9 +1692,9 @@ function renderDashboard() {
       </div>
       <div class="db-kpi">
         <div class="db-kpi-label">Cash déposé (net)</div>
-        <div class="db-kpi-val" style="color:#f0c27f">${currentKPI().deposited !== 0 ? fmt(currentKPI().deposited) : '—'}</div>
+        <div class="db-kpi-val" style="color:var(--deposit)">${currentKPI().deposited !== 0 ? fmt(currentKPI().deposited) : '—'}</div>
         <div class="db-kpi-sub" style="margin-bottom:2px">Dépôts - Retraits</div>
-        ${currentKPI().transfers ? `<div class="db-kpi-sub" style="margin-bottom:2px">Transferts titres: <span style="color:#f0c27f">${fmt(currentKPI().transfers)}</span></div>` : ''}
+        ${currentKPI().transfers ? `<div class="db-kpi-sub" style="margin-bottom:2px">Transferts titres: <span style="color:var(--deposit)">${fmt(currentKPI().transfers)}</span></div>` : ''}
         <div class="db-kpi-sub">Intérêts: ${interestDisplay !== 0 ? `<span style="color:#00e5cc">${fmt(interestDisplay)}</span>` : '—'}</div>
       </div>
       <div class="db-kpi">
@@ -1726,18 +1738,68 @@ function renderDashboard() {
       })()}
     </div>
 
+    ${(() => {
+      // V2 — Sources de revenus : primes + P&L actions réalisé + dividendes nets.
+      // N'apparaît que si le compte a des données actions/dividendes (sinon 100% options → redondant).
+      // P&L actions = jambe ÉCONOMIQUE (FIFO, primes exclues → pas de double comptage avec les primes).
+      computeStockEconPnl();
+      const stkPnl = stockTrades
+        .filter(t => (t.realizedPnl || (t._econOk && Math.abs(t._econPnl) > 0.005)) && (currentYear === 'ALL' || t.date.startsWith(currentYear)))
+        .reduce((s, t) => s + stockDispPnlBase(t), 0);
+      const divNet = stockDividends
+        .filter(d => currentYear === 'ALL' || d.date.startsWith(currentYear))
+        .reduce((s, d) => s + (d.amountBase || 0), 0);
+      if (!stkPnl && !divNet) return '';
+      const total = totPrem + stkPnl + divNet + interestDisplay;
+      const segs = [
+        ['Primes options', totPrem, '#00e5cc'],
+        ['P&L actions réalisé', stkPnl, '#2ecc71'],
+        ['Dividendes nets', divNet, 'var(--gold)'],
+        ...(interestDisplay !== 0 ? [['Intérêts', interestDisplay, 'var(--blue)']] : []),
+      ];
+      const posSum = segs.reduce((s, [, v]) => s + Math.max(0, v), 0);
+      const collapsed = localStorage.getItem('olt_srcrev_collapsed') === '1';
+      return `
+    <div style="background:var(--card-surface);border:1px solid var(--card-border);border-radius:12px;padding:${collapsed ? '10px' : '14px'} 20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none" onclick="toggleSrcRev()" title="${collapsed ? 'Afficher le détail' : 'Masquer le détail'}">
+            <span style="font-size:20px;color:var(--c-muted);line-height:1;transition:transform 0.15s">${collapsed ? '▸' : '▾'}</span>
+            <span style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:1px">Sources de revenus${currentYear !== 'ALL' ? ' · ' + currentYear : ''}</span>
+          </div>
+          ${collapsed ? '' : segs.map(([label, v, col]) => `
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="width:8px;height:8px;border-radius:2px;background:${col};display:inline-block"></span>
+            <span style="font-size:11px;color:var(--c-muted)">${label}</span>
+            <span class="mono" style="font-size:12px;font-weight:700;color:${v >= 0 ? col : 'var(--red)'}">${v > 0 ? '+' : ''}${fmt(v)}</span>
+          </div>`).join('')}
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-size:11px;color:var(--c-muted)">Total</span>
+          <span class="mono" style="font-size:15px;font-weight:700;color:${total >= 0 ? 'var(--c-text)' : 'var(--red)'}">${total > 0 ? '+' : ''}${fmt(total)}</span>
+        </div>
+      </div>
+      ${collapsed ? '' : `
+      <div style="display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--card-border);margin-top:10px">
+        ${posSum > 0 ? segs.filter(([, v]) => v > 0).map(([label, v, col]) => `<div title="${label} : ${(v / posSum * 100).toFixed(1)}% des revenus positifs" style="width:${(v / posSum * 100).toFixed(2)}%;background:${col}"></div>`).join('') : ''}
+      </div>`}
+    </div>`;
+    })()}
+
     <!-- Chart -->
     <div class="db-chart-wrap">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div>
-          <div class="db-chart-title">Portfolio Evolution</div>
-          <div class="db-chart-sub">Dépôts: ${fmt(currentKPI().deposited)} · Premium cumulé: ${fmt(totPrem)} · ${fmtD(dates[dates.length-1])}</div>
+          <div class="db-chart-title">Revenus mensuels par source</div>
+          <div class="db-chart-sub">Primes + P&L actions + dividendes (barres empilées) · Dépôts: ${fmt(currentKPI().deposited)} · ${fmtD(dates[dates.length-1])}</div>
         </div>
         <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;gap:14px">
-            <div class="db-leg leg-item" data-series="nav"><div class="db-leg-dot leg-dot" style="background:#00e5cc"></div>Premium cumulé</div>
-            <div class="db-leg leg-item" data-series="premium"><div class="db-leg-dot leg-dot" style="background:#2ecc71"></div>Premium mensuel</div>
-            <div class="db-leg leg-item" data-series="deposited"><div class="db-leg-dot leg-dot" style="background:#f0c27f;border-radius:2px"></div>Cash Deposited</div>
+            <div class="db-leg leg-item" data-series="cum"><div class="db-leg-dot leg-dot" style="background:#1f6feb"></div>Revenus cumulés</div>
+            <div class="db-leg leg-item" data-series="prem"><div class="db-leg-dot leg-dot" style="background:#00e5cc;border-radius:2px"></div>Primes</div>
+            <div class="db-leg leg-item" data-series="stk"><div class="db-leg-dot leg-dot" style="background:#2ecc71;border-radius:2px"></div>P&L actions</div>
+            <div class="db-leg leg-item" data-series="div"><div class="db-leg-dot leg-dot" style="background:#e3b341;border-radius:2px"></div>Dividendes</div>
+            <div class="db-leg leg-item" data-series="dep"><div class="db-leg-dot leg-dot" style="background:var(--deposit);border-radius:2px"></div>Dépôts</div>
           </div>
           <div class="db-tf tf-tabs">
             ${['1M','3M','6M','ALL'].map(t=>`<button class="db-tf-btn tf-tab ${t===currentTf?'active':''}" data-tf="${t}">${t}</button>`).join('')}
@@ -1767,6 +1829,13 @@ function renderDashboard() {
 }
 
 function setTf(tf){ currentTf=tf; renderDashboard(); }
+
+// V2 — replie/déplie la bande "Sources de revenus" (préférence mémorisée)
+function toggleSrcRev() {
+  localStorage.setItem('olt_srcrev_collapsed', localStorage.getItem('olt_srcrev_collapsed') === '1' ? '0' : '1');
+  renderDashboard();
+  attachContentListeners();
+}
 
 function renderYearTabs() {
   const el = document.getElementById('yr-tabs');
@@ -2001,11 +2070,10 @@ function toggleRowDetail(id) {
   if (expandedRows.has(sid)) expandedRows.delete(sid);
   else expandedRows.add(sid);
 
-  // Refresh modal if open (called from modal context)
-  const modal = document.getElementById('stock-modal');
-  if (modal && modal.classList.contains('open')) {
-    const modalTicker = document.getElementById('modal-ticker')?.textContent;
-    if (modalTicker) openStockModal(modalTicker);
+  // Refresh modal if open (called from modal context) — modale ticker unifiée
+  const modal = document.getElementById('equity-modal');
+  if (modal && modal.classList.contains('open') && tickerModalState.ticker) {
+    openTickerModal(tickerModalState.ticker, tickerModalState.tab);
     return;
   }
 
@@ -2321,6 +2389,12 @@ function switchMonthlyTab(tab) {
 
 function setMonthlyReportMonth(m) {
   monthlyReportMonth = m;
+  renderMonthlyReport();
+}
+
+// V2 — option "inclure les dividendes dans la performance du mois" (préférence mémorisée)
+function toggleMonthlyDividends(checked) {
+  localStorage.setItem('olt_monthly_incl_div', checked ? '1' : '0');
   renderMonthlyReport();
 }
 
@@ -2909,17 +2983,16 @@ function renderMonthly() {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--card-bg)">
           <div>
             <div style="font-size:15px;font-weight:700;color:var(--c-text);letter-spacing:-0.3px">Primes par Ticker × Mois</div>
-            <div style="font-size:11px;color:#6b8aaa;margin-top:3px">Net premium (after fees) · ${tickers.length} tickers · ${months.length} months · heatmap intensity = relative size</div>
           </div>
           <div style="display:flex;align-items:center;gap:16px">
             <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--c-muted)">
-              <span style="width:8px;height:8px;border-radius:50%;background:#00e5cc;display:inline-block"></span>Positive
+              <span style="width:8px;height:8px;border-radius:50%;background:#00e5cc;display:inline-block"></span>Mois positif
             </span>
             <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--c-muted)">
-              <span style="width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block"></span>Negative
+              <span style="width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block"></span>Mois négatif
             </span>
             <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--c-muted)">
-              <span style="width:8px;height:8px;border-radius:50%;background:var(--card-border);display:inline-block"></span>No activity
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--card-border);display:inline-block"></span>Pas d'activité
             </span>
           </div>
         </div>
@@ -3018,6 +3091,14 @@ function renderMonthlyReport(months) {
   const buyPrem    = monthBuys.reduce((s,t)  => s + premB(t), 0);
   const netBrut    = sellPrem + buyPrem; // buyPrem is negative
 
+  // ── V2 : dividendes du mois (option "inclure les dividendes dans la performance").
+  // Préférence mémorisée ; nets de retenues, en devise de base.
+  const inclDiv = localStorage.getItem('olt_monthly_incl_div') === '1';
+  const divNetMonth = stockDividends
+    .filter(d => d.date.startsWith(m))
+    .reduce((s, d) => s + (d.amountBase || 0), 0);
+  const perfNet = monthNet + (inclDiv ? divNetMonth : 0); // primes nettes (+ dividendes si option activée)
+
   // Top 3 tickers
   const byTicker = {};
   monthTxs.forEach(t => { byTicker[t.ticker] = (byTicker[t.ticker]||0) + txNet(t); });
@@ -3068,17 +3149,23 @@ function renderMonthlyReport(months) {
   const capOverride = localStorage.getItem('olt_cap_override_' + mKey);
   const effectiveCapital = capOverride !== null ? parseFloat(capOverride) : capitalAtMonthStart;
   const isCustomCapital  = capOverride !== null;
-  const monthlyReturn = effectiveCapital > 0 && monthNet !== 0 ? (monthNet / effectiveCapital) * 100 : null;
+  const monthlyReturn = effectiveCapital > 0 && perfNet !== 0 ? (perfNet / effectiveCapital) * 100 : null;
 
   const isCurrentMonth = m === new Date().toISOString().slice(0,7);
 
   container.innerHTML = `
-    <!-- Dropdown selector -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--card-border)">
+    <!-- Dropdown selector + option dividendes (hors carte exportée) -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--card-border)">
       <div style="font-size:13px;font-weight:600;color:var(--c-text)">Sélectionner un mois</div>
-      <select onchange="setMonthlyReportMonth(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--c-text);font-family:'DM Mono',monospace;cursor:pointer;outline:none">
-        ${monthsDesc.map(mo => `<option value="${mo}" ${mo===m?'selected':''}>${monthLabel(mo)}</option>`).join('')}
-      </select>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--c-muted);cursor:pointer;user-select:none" title="Ajoute les dividendes nets du mois à la performance (primes + dividendes)">
+          <input type="checkbox" onchange="toggleMonthlyDividends(this.checked)" ${inclDiv ? 'checked' : ''} style="accent-color:#00e5cc;width:15px;height:15px;cursor:pointer">
+          Inclure les dividendes
+        </label>
+        <select onchange="setMonthlyReportMonth(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--c-text);font-family:'DM Mono',monospace;cursor:pointer;outline:none">
+          ${monthsDesc.map(mo => `<option value="${mo}" ${mo===m?'selected':''}>${monthLabel(mo)}</option>`).join('')}
+        </select>
+      </div>
     </div>
 
     <!-- Report card -->
@@ -3094,9 +3181,9 @@ function renderMonthlyReport(months) {
               ${isCurrentMonth ? `<div style="font-size:11px;color:#f0883e;margin-top:4px;font-family:'DM Mono',monospace">⚠ Mois en cours — données partielles</div>` : ``}
             </div>
             <div style="text-align:right">
-              <div style="font-size:11px;color:#ffffff;margin-bottom:4px;font-weight:600;letter-spacing:0.8px">PRIMES NETTES</div>
-              <div style="font-size:32px;font-weight:800;font-family:'DM Mono',monospace;color:${monthNet>=0?'#2ecc71':'#f85149'}">${monthNet>=0?'+':''}${fmt(monthNet)}</div>
-              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Brut ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}</div>
+              <div style="font-size:11px;color:#ffffff;margin-bottom:4px;font-weight:600;letter-spacing:0.8px">${inclDiv ? 'PRIMES + DIVIDENDES' : 'PRIMES NETTES'}</div>
+              <div style="font-size:32px;font-weight:800;font-family:'DM Mono',monospace;color:${perfNet>=0?'#2ecc71':'#f85149'}">${perfNet>=0?'+':''}${fmt(perfNet)}</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Primes brutes ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}${inclDiv ? ` · Dividendes ${divNetMonth>=0?'+':''}${fmt(divNetMonth)}` : ''}</div>
             </div>
           </div>
         </div>
@@ -3117,7 +3204,7 @@ function renderMonthlyReport(months) {
             <div id="mcap-sub-${mKey}" style="font-size:10px;color:${isCustomCapital?'#00e5cc':'var(--c-dim)'};margin-top:3px">${isCustomCapital ? '✏ Capital personnalisé' : 'au 1er ' + monthLabel(m)}</div>
           </div>
           <div style="padding:16px 20px;border-right:1px solid var(--card-border)">
-            <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Rendement mensuel<br><span style="font-size:10px;font-weight:400;opacity:0.8">(primes nettes / capital)</span></div>
+            <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Rendement mensuel<br><span style="font-size:10px;font-weight:400;opacity:0.8">(${inclDiv ? 'primes + dividendes' : 'primes nettes'} / capital)</span></div>
             <div id="mcap-rdt-${mKey}" style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:${monthlyReturn !== null && monthlyReturn >= 0 ? '#2ecc71' : '#f85149'}">${monthlyReturn !== null ? (monthlyReturn >= 0 ? '▲ ' : '▼ ') + Math.abs(monthlyReturn).toFixed(2) + '%' : '—'}</div>
           </div>
           <div style="padding:16px 20px">
@@ -3301,10 +3388,12 @@ async function fetchPrice(ticker, ccy) {
 
 async function fetchAllPrices() {
   const open = filteredTransactions().filter(t => t.status === 'Open');
-  const tickers = [...new Set(open.map(t => t.ticker))];
   // Devise par ticker (pour résoudre le suffixe Yahoo des actions étrangères)
   const ccyByTicker = {};
   open.forEach(t => { if (!ccyByTicker[t.ticker]) ccyByTicker[t.ticker] = t.currency || 'USD'; });
+  // V2 — tickers des positions actions/ETF (mêmes cours sous-jacents que les options)
+  stockPositions.forEach(p => { if (!ccyByTicker[p.ticker]) ccyByTicker[p.ticker] = p.currency || 'USD'; });
+  const tickers = [...new Set([...open.map(t => t.ticker), ...stockPositions.map(p => p.ticker)])];
   await Promise.all([
     fetchLiveFx(), // taux de change live, en parallèle des cours
     ...tickers.map(async ticker => {
@@ -3325,6 +3414,9 @@ async function refreshPricesAndRender() {
     } else if (positionsTab === 'analyse') {
       loadAnalyseData();
     }
+  } else if (active?.dataset?.page === 'equities') {
+    renderEquities();
+    attachContentListeners();
   }
   // Update last refresh indicator
   const el = document.getElementById('price-updated');
@@ -3339,6 +3431,755 @@ function startPriceRefresh() {
 let positionsTab = 'list';
 let sectorsState = { groupBy: 'sector', optType: 'ALL' };
 let analyseState = { optType: 'ALL' };
+
+// ══════════════════════════════════════════════════════════════
+//  V2 — Page Actions & ETF (positions au comptant + P&L réalisé)
+// ══════════════════════════════════════════════════════════════
+let equitiesTab = 'positions';
+
+// Primes d'options NETTES (primes − frais, rolls/rachats inclus) collectées sur un ticker,
+// dans la DEVISE de la position (pour soustraire du PRU sans mélange de devises).
+// On ne somme que les options de la même devise (cas quasi exclusif) ; valeurs d'origine
+// pour les imports XML (premiumOrig, pré-convertis en base sinon), directes pour le CSV.
+function tickerNetPremiumOrig(ticker, ccy) {
+  let sum = 0, count = 0;
+  transactions.forEach(t => {
+    if (normTicker(t.ticker) !== normTicker(ticker)) return;
+    if ((t.currency || 'USD') !== (ccy || 'USD')) return;
+    const isPreConv = t.fxRate && t.fxRate !== 1 && t.currency !== BASE_CCY;
+    sum += isPreConv
+      ? (t.premiumOrig != null ? t.premiumOrig : t.premiumCollected) + (t.feesOrig != null ? t.feesOrig : (t.fees || 0))
+      : t.premiumCollected + (t.fees || 0);
+    count++;
+  });
+  return { sum, count };
+}
+
+// ── V2 : jambe action ÉCONOMIQUE — choix produit OLT (≠ convention IBKR).
+// IBKR recycle les primes des options assignées dans la base/produits de l'action
+// (put assigné → base réduite ; call assigné → prime ajoutée aux produits), ce qui
+// double-compte avec « Primes collectées » et affiche des gains irréels (ex. META 2023 :
+// +17 895 $ IBKR pour une action achetée 137 et livrée à 110). Ici : les primes restent
+// dans les primes, l'action porte son COÛT D'ACHAT RÉEL (base du lot d'achat, non
+// ajustée — pour une assignation = strike × qté + frais).
+// Méthode : COÛT MOYEN PONDÉRÉ (PRU moyen, convention française — choix de Juan), PAS
+// FIFO : chaque vente se compare au PRU moyen de la position au moment de la vente
+// (ex. CROX 76 + 92.5 + 90 → PRU 86.17 pour TOUTES les ventes ; le total est identique
+// au FIFO, seule la répartition par ligne change et devient intuitive).
+// Annote chaque VENTE de stockTrades : _econCost (coût du lot au PRU moyen), _econPnl
+// (devise du trade), _econPnlBase, _econOk. Historique d'achat incomplet → _econOk=false
+// (repli IBKR) jusqu'au retour à plat de la position.
+function computeStockEconPnl() {
+  stockEconBasis = {};
+  const byTicker = {};
+  [...stockTrades]
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
+    .forEach(t => {
+      const k = normTicker(t.ticker);
+      (byTicker[k] = byTicker[k] || []).push(t);
+    });
+  Object.entries(byTicker).forEach(([tkKey, list]) => {
+    let qty = 0, totalCost = 0, unknown = false; // position courante au coût moyen pondéré
+    list.forEach(t => {
+      delete t._econCost; delete t._econPnl; delete t._econPnlBase;
+      t._econOk = false;
+      if (t.qty > 0) {
+        if (t.costBasis == null) unknown = true; // achat sans base (vieil import) → cycle inexploitable
+        else totalCost += t.costBasis;
+        qty += t.qty;
+      } else if (t.qty < 0) {
+        const sellQty = -t.qty;
+        if (!unknown && qty >= sellQty - 1e-9 && qty > 0) {
+          const cost = (totalCost / qty) * sellQty; // PRU moyen × qté vendue
+          t._econCost     = cost;
+          t._econPnl      = (t.proceeds || 0) + (t.fees || 0) - cost;
+          t._econPnlBase  = t._econPnl * (t.fxRate || 1);
+          t._econOk       = true;
+          totalCost -= cost;
+          qty -= sellQty;
+          if (qty <= 1e-9) { qty = 0; totalCost = 0; } // position soldée → repart propre
+        } else {
+          // vente à découvert ou achats manquants (année non importée) → repli IBKR ;
+          // au retour à plat, le cycle suivant repart sur des bases saines.
+          qty = Math.max(0, qty - sellQty);
+          if (qty === 0) { totalCost = 0; unknown = false; }
+        }
+      }
+    });
+    // Résidu = coût économique des titres encore détenus (position longue ouverte)
+    stockEconBasis[tkKey] = { qty, cost: totalCost, ok: !unknown && qty > 1e-9 };
+  });
+}
+
+// PRU économique d'une position ouverte (coût d'achat réel moyen), sinon repli sur le
+// costBasisPrice IBKR du snapshot. Retourne { pru, cost, ok } — ok=false = repli IBKR
+// (historique d'achat incomplet, ou qté résiduelle ≠ qté du snapshot).
+function stockEconPru(ticker, snapQty, snapPru, snapCostMoney) {
+  const b = stockEconBasis[normTicker(ticker)];
+  if (b && b.ok && Math.abs(b.qty - Math.abs(snapQty)) < 1e-6) {
+    return { pru: b.cost / b.qty, cost: b.cost, ok: true };
+  }
+  const cost = snapCostMoney || (snapPru || 0) * Math.abs(snapQty);
+  return { pru: snapPru || 0, cost, ok: false };
+}
+
+// P&L affiché d'un trade action : économique si matché FIFO, sinon chiffre IBKR (repli)
+function stockDispPnl(t)     { return t._econOk ? t._econPnl     : (t.realizedPnl     || 0); }
+function stockDispPnlBase(t) { return t._econOk ? t._econPnlBase : (t.realizedPnlBase || 0); }
+
+// Regroupe les fills partiels d'un même ordre (affichage uniquement — les données stockées
+// restent granulaires pour la déduplication idempotente). Clé : ibOrderID (XML, exact) ;
+// repli ticker|date|heure|prix|action pour les données importées avant l'ajout d'ibOrderID
+// et pour le CSV (déjà agrégé par ordre, donc quasi toujours 1 ligne = 1 groupe).
+function groupStockFills(txs) {
+  const map = {};
+  txs.forEach(t => {
+    const key = t.ibOrderID ? 'o' + t.ibOrderID : `${t.ticker}|${t.date}|${t.time || ''}|${t.price}|${t.action}`;
+    if (!map[key]) {
+      map[key] = { ...t, _fills: [t] };
+    } else {
+      const g = map[key];
+      g._fills.push(t);
+      g.qty             += t.qty;
+      g.proceeds        += t.proceeds || 0;
+      g.fees            += t.fees || 0;
+      g.realizedPnl     += t.realizedPnl || 0;
+      g.realizedPnlBase += t.realizedPnlBase || 0;
+      // Base IBKR : sommée si TOUS les fills l'ont, sinon absente (fallback reconstruction)
+      g.costBasis = (g.costBasis != null && t.costBasis != null) ? g.costBasis + t.costBasis : undefined;
+      // Jambe économique : valide seulement si TOUS les fills sont matchés FIFO
+      if (g._econOk && t._econOk) {
+        g._econCost    += t._econCost;
+        g._econPnl     += t._econPnl;
+        g._econPnlBase += t._econPnlBase;
+      } else {
+        g._econOk = false;
+        delete g._econCost; delete g._econPnl; delete g._econPnlBase;
+      }
+      if (t.assigned) g.assigned = true;
+    }
+  });
+  // Prix moyen pondéré par la quantité (fills à prix différents possibles sur un même ordre)
+  return Object.values(map).map(g => {
+    if (g._fills.length > 1) {
+      const totQ = g._fills.reduce((s, f) => s + Math.abs(f.qty), 0);
+      if (totQ > 0) g.price = g._fills.reduce((s, f) => s + Math.abs(f.qty) * (f.price || 0), 0) / totQ;
+    }
+    return g;
+  });
+}
+
+function switchEqTab(tab) {
+  equitiesTab = tab;
+  renderEquities();
+  attachContentListeners();
+}
+
+// Recherche dans les tables de la page Actions & ETF (ticker, nom, date) —
+// persistée dans eqSearchQ pour survivre aux re-renders (refresh prix, switch d'onglet).
+let eqSearchQ = '';
+function filterEqTable(q) {
+  eqSearchQ = q;
+  const ql = q.toLowerCase().trim();
+  document.querySelectorAll('.eq-table tbody tr').forEach(r => {
+    const ticker = (r.dataset.eqTicker || '').toLowerCase();
+    const date   = (r.dataset.date || '').toLowerCase();
+    const name   = (r.dataset.name || '').toLowerCase();
+    r.style.display = !ql || ticker.includes(ql) || date.includes(ql) || name.includes(ql) ? '' : 'none';
+  });
+}
+
+// ── Modale détail d'un ticker actions/ETF — même gabarit que la modale options,
+// mais KPI "Plus-values Totales Réalisées" au lieu de "Premium Collecté".
+// ══════════════════════════════════════════════════════════════
+//  V2 — Modale ticker UNIFIÉE : options + actions dans une seule
+//  fenêtre. Bandeau KPI commun (toujours affiché) + onglets
+//  Options / Actions qui basculent uniquement la table de détail.
+//  Remplace openStockModal (options) et openEquityModal (actions),
+//  conservés en alias pour compat.
+// ══════════════════════════════════════════════════════════════
+let tickerModalState = { ticker: '', tab: 'options' };
+
+function switchTickerModalTab(tab) {
+  tickerModalState.tab = tab;
+  openTickerModal(tickerModalState.ticker, tab);
+}
+
+function openTickerModal(ticker, defaultTab) {
+  computeStockEconPnl();
+
+  // ── Données OPTIONS (depuis transactions)
+  const optTxs = transactions.filter(t => t.ticker === ticker);
+  const optGrouped = groupFills(optTxs).filter(isRealTrade).sort((a, b) => {
+    if (b.date !== a.date) return b.date > a.date ? 1 : -1;
+    return a.action === b.action ? 0 : (a.action === 'SELL' ? -1 : 1); // même date : SELL avant BUY
+  });
+  const optNet = groupFills(optTxs).reduce((s, t) => s + txNet(t), 0);
+  const optOpenCount = groupOpenPositions(optTxs.filter(t => t.status === 'Open')).length;
+  const hasOptions = optTxs.length > 0;
+
+  // ── Données ACTIONS (depuis stockTrades / stockPositions), jambe économique
+  const stkTrades = groupStockFills(stockTrades.filter(t => t.ticker === ticker))
+    .sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+  const pos = stockPositions.find(p => p.ticker === ticker) || null;
+  const openQty = pos ? pos.qty : 0;
+  const stkRealized = stkTrades.reduce((s, t) => s + (t.qty < 0 || t.realizedPnl ? stockDispPnlBase(t) : 0), 0);
+  const hasStock = stkTrades.length > 0 || openQty !== 0;
+
+  // ── Dividendes nets du ticker
+  const dvs = stockDividends.filter(d => normTicker(d.ticker) === normTicker(ticker));
+  const divNet = dvs.reduce((s, d) => s + (d.amountBase || 0), 0);
+  const hasDividends = dvs.length > 0;
+
+  // ── Onglets disponibles + onglet actif (par défaut selon la page d'origine du clic)
+  const tabs = [];
+  if (hasOptions) tabs.push('options');
+  if (hasStock)   tabs.push('actions');
+  if (tabs.length === 0) tabs.push('options');
+  const tab = defaultTab && tabs.includes(defaultTab) ? defaultTab : tabs[0];
+  tickerModalState = { ticker, tab };
+
+  // ── Méta header
+  const ccy = pos?.currency || stkTrades[0]?.currency || optTxs[0]?.currency || 'USD';
+  const name = pos?.description || stkTrades.find(t => t.description)?.description || getSectorInfo(ticker)?.company || ticker;
+  const sector = getSectorInfo(ticker)?.sector || '';
+  const subSector = getSectorInfo(ticker)?.subSector || '';
+  const tickColor = !ccy || ccy === 'USD' ? '#00e5cc' : ccy === 'EUR' ? '#c4b5fd' : 'var(--orange)';
+  const cs = ccySym(ccy);
+  // Sous-titre : devise + secteur + sous-secteur (le détail options/actions est déjà dans "Total trades")
+  const subParts = [ccy];
+  if (sector) subParts.push(sector);
+  if (subSector) subParts.push(subSector);
+  if (pos?.subCategory === 'ETF') subParts.push('ETF');
+
+  const pnlCol = v => v > 0 ? '#2ecc71' : v < 0 ? '#f85149' : 'var(--c-text)';
+  // Helper carte : label + valeur (18px) + sous-ligne. État vide sobre (gris, "—").
+  const card = (label, valHtml, subHtml) => `
+      <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${label}</div>
+      <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace">${valHtml}</div>
+      <div style="font-size:11px;color:var(--c-muted);margin-top:5px;font-family:'DM Mono',monospace">${subHtml || '&nbsp;'}</div>`;
+  const empty = `<span style="color:var(--c-dim)">—</span>`;
+
+  // ── Bandeau KPI COMMUN : 5 cartes TOUJOURS présentes (même vides) pour un affichage
+  // cohérent d'un ticker à l'autre. Les cartes non pertinentes montrent un état vide sobre.
+  const cards = [];
+
+  // 1. Primes options nettes
+  cards.push(card('Primes options nettes',
+    hasOptions ? `<span style="color:${pnlCol(optNet)}">${optNet > 0 ? '+' : ''}${fmt(optNet)}</span>` : empty,
+    hasOptions ? `${optGrouped.length} trades · ${optOpenCount} ouverte${optOpenCount !== 1 ? 's' : ''}` : 'Aucune option'));
+
+  // 2. P&L actions réalisé
+  cards.push(card('P&L actions réalisé',
+    hasStock ? `<span style="color:${pnlCol(stkRealized)}">${stkRealized > 0 ? '+' : ''}${fmt(stkRealized)}</span>` : empty,
+    hasStock ? 'actions uniquement' : 'Aucune action tradée'));
+
+  // 3. Actions détenues (+ sous-ligne PRU → PRU ajusté quand on détient + primes)
+  let pruSub = '&nbsp;';
+  if (openQty > 0) {
+    const prem = tickerNetPremiumOrig(ticker, ccy);
+    if (prem.count) {
+      const econ = stockEconPru(ticker, pos.qty, pos.costBasisPrice, pos.costBasisMoney);
+      const pruAdj = econ.pru - prem.sum / openQty;
+      const adjTip = `PRU ajusté : votre prix de revient diminué des primes d'options nettes encaissées sur ${ticker} (PRU ${cs}${econ.pru.toFixed(2)} − ${cs}${prem.sum.toFixed(2)} ÷ ${openQty} actions). C'est votre véritable seuil de rentabilité.`;
+      pruSub = `<span style="font-size:13px">PRU ${cs}${econ.pru.toFixed(2)}${!econ.ok ? ' IB' : ''} → <span style="color:var(--gold);font-weight:600;cursor:help" title="${adjTip}">${cs}${pruAdj.toFixed(2)}</span></span>`;
+    }
+  }
+  cards.push(card('Actions détenues',
+    openQty ? `<span style="color:#00e5cc">${openQty} action${Math.abs(openQty) > 1 ? 's' : ''}</span>` : `<span style="color:var(--c-dim)">Aucune</span>`,
+    pruSub));
+
+  // 4. Dividendes nets
+  cards.push(card('Dividendes nets',
+    hasDividends ? `<span style="color:${pnlCol(divNet)}">${divNet > 0 ? '+' : ''}${fmt(divNet)}</span>` : empty,
+    hasDividends ? 'après retenues' : 'Pas de dividendes'));
+
+  // 5. Total trades
+  cards.push(card('Total trades',
+    `<span style="color:var(--c-text)">${optGrouped.length + stkTrades.length}</span>`,
+    `${optGrouped.length} opt · ${stkTrades.length} act`));
+
+  // Grille : les 3 premières cartes (plus de contenu) plus larges, "Dividendes nets" et
+  // "Total trades" (les plus courtes) plus étroites. Repli sur colonnes égales si ≠ 5 cartes.
+  const kpiCols = cards.length === 5 ? '1.15fr 1.15fr 1.15fr 0.8fr 0.75fr' : `repeat(${cards.length},1fr)`;
+  const kpiRow = `<div style="display:grid;grid-template-columns:${kpiCols};border-bottom:1px solid var(--card-border);flex-shrink:0">
+    ${cards.map((c, i) => `<div style="padding:16px 22px${i < cards.length - 1 ? ';border-right:1px solid var(--card-border)' : ''}">${c}</div>`).join('')}
+  </div>`;
+
+  // ── Barre d'onglets (uniquement si les deux types existent).
+  // Styles INLINE et non via .eq-tab-btn : la modale s'ouvre depuis n'importe quelle page,
+  // or cette classe n'est définie que dans le <style> inline de la page Actions & ETF —
+  // absente ailleurs, le bouton retomberait sur son apparence par défaut (fond blanc).
+  const tabBtn = (id, label) => `<button onclick="switchTickerModalTab('${id}')" style="padding:11px 18px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;outline:none;transition:all 0.15s;border-bottom:2px solid ${tab === id ? '#00e5cc' : 'transparent'};color:${tab === id ? '#00e5cc' : 'var(--c-muted)'}">${label}</button>`;
+  const tabBar = tabs.length > 1 ? `
+    <div style="display:flex;border-bottom:1px solid var(--card-border);padding:0 20px;flex-shrink:0">
+      ${tabBtn('options', 'Options')}${tabBtn('actions', 'Actions')}
+    </div>` : '';
+
+  const th = (label, align) => `<th style="padding:10px 12px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;text-align:${align || 'left'};background:var(--card-surface);position:sticky;top:0">${label}</th>`;
+  const tagA = a => a === 'SELL' ? 'background:rgba(248,81,73,0.15);color:#f85149' : 'background:rgba(46,160,67,0.15);color:#2ecc71';
+  const tagT = t => t === 'C' ? 'background:rgba(0,229,204,0.12);color:#00e5cc' : 'background:rgba(248,81,73,0.15);color:#f85149';
+  const tagS = s => s === 'Expired' ? 'background:rgba(188,140,255,0.12);color:#bc8cff' : s === 'Closed' ? 'background:rgba(125,133,144,0.15);color:#7d8590' : 'background:rgba(31,111,235,0.15);color:#1f6feb';
+
+  // ── Table OPTIONS (portée de l'ancienne openStockModal : détail assignations partielles)
+  const optionsTable = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--card-border)">
+        ${th('Date')}${th('Action')}${th('Type')}${th('Strike')}${th('Expiry')}${th('Qty', 'center')}${th('Prem. Coll.', 'right')}${th('Fees', 'right')}${th('Net Premium', 'right')}${th('Statut')}
+      </tr></thead>
+      <tbody>${optGrouped.flatMap(t => {
+        const isFx = t.currency && t.currency !== BASE_CCY;
+        const sym = t.currency === 'EUR' ? '€' : (t.currency || '') + ' ';
+        const net = txNet(t);
+        const partialD = t.action === 'SELL' ? getPartialDetails(t) : null;
+        const isExp = expandedRows.has(String(t.id));
+        const isPreConv = t.fxRate && t.fxRate !== 1 && isFx;
+        const premDispBase = isPreConv ? t.premiumCollected : toBase(t.premiumCollected, t.currency, t.date);
+        const feesDispBase = isPreConv ? (t.fees || 0) : toBase(t.fees || 0, t.currency, t.date);
+        const premDispOrig = isPreConv ? (t.premiumOrig != null ? t.premiumOrig : t.premiumCollected) : t.premiumCollected;
+        const feesDispOrig = isPreConv ? (t.feesOrig != null ? t.feesOrig : (t.fees || 0)) : (t.fees || 0);
+        const mainRow = `<tr style="border-bottom:1px solid var(--card-bg);transition:background 0.1s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
+          <td style="padding:9px 18px;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted);white-space:nowrap">${t.date}</td>
+          <td style="padding:9px 10px"><span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagA(t.action)}">${t.action}</span></td>
+          <td style="padding:9px 10px"><span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagT(t.type)}">${t.type === 'C' ? 'CALL' : 'PUT'}</span></td>
+          <td style="padding:9px 10px;font-family:'DM Mono',monospace;font-size:12px;color:var(--c-text)">${ccySym(t.currency)}${t.strike}</td>
+          <td style="padding:9px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${t.expiry}</td>
+          <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${t.action === 'SELL' ? '#f85149' : '#2ecc71'}">${t.action === 'SELL' ? '-' : '+'}${t.qty}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:${t.premiumCollected >= 0 ? '#00e5cc' : '#f85149'}">${fmt(premDispBase)}${isFx ? `<span style="color:var(--c-dim);font-size:9px;margin-left:3px">(${sym}${Math.abs(premDispOrig).toFixed(2)})</span>` : ''}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${feesDispBase !== 0 ? fmt(feesDispBase) + (isFx ? `<span style="color:var(--c-dim);font-size:9px;margin-left:3px">(${sym}${Math.abs(feesDispOrig).toFixed(2)})</span>` : '') : '—'}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:${net >= 0 ? '#00e5cc' : '#f85149'}">${fmtWithFx(t)}</td>
+          <td style="padding:9px 18px">
+            <div style="display:flex;align-items:center;gap:5px">
+              ${partialD ? `<button onclick="event.stopPropagation();toggleRowDetail('${t.id}')" style="background:none;border:none;cursor:pointer;color:#f0883e;font-size:13px;padding:0;line-height:1;opacity:0.8" title="Voir le détail de l'assignation partielle">${isExp ? '▾' : '▸'}</button>` : ''}
+              ${t.exercised
+                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
+                : t.action === 'SELL' && t.assigned
+                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
+                : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;${tagS(t.status)}">${t.status}</span>`}
+            </div>
+          </td>
+        </tr>`;
+        if (partialD && isExp) {
+          return [mainRow, `<tr style="background:rgba(240,136,62,0.04);border-bottom:1px solid var(--card-bg)">
+            <td colspan="10" style="padding:5px 18px 8px 28px">
+              <div style="display:flex;gap:20px;font-size:11px;font-family:'DM Mono',monospace;flex-wrap:wrap">
+                <span style="color:#f0883e">▸ ${partialD.assignedQty} contrat${partialD.assignedQty > 1 ? 's' : ''} assigné${partialD.assignedQty > 1 ? 's' : ''}<span style="color:var(--c-dim);margin-left:5px">(${partialD.assignedDate})</span></span>
+                <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty > 1 ? 's' : ''} fermé${partialD.closedQty > 1 ? 's' : ''} · ${fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
+              </div>
+            </td></tr>`];
+        }
+        return [mainRow];
+      }).join('')}</tbody>
+    </table>`;
+
+  // ── Table ACTIONS (portée de l'ancienne openEquityModal)
+  const actionsTable = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--card-border)">
+        ${th('Date')}${th('Action')}${th('Qté', 'right')}${th('Prix', 'right')}${th('Total', 'right')}${th('Frais', 'right')}${th('P&L réalisé', 'right')}${th('')}
+      </tr></thead>
+      <tbody>${stkTrades.map(t => {
+        const isFx = t.currency && t.currency !== BASE_CCY;
+        const tcs = ccySym(t.currency);
+        const pxAdapt = v => { let s = v.toFixed(2); if (Math.abs((v - parseFloat(s)) * t.qty) > 0.5) s = v.toFixed(3); if (Math.abs((v - parseFloat(s)) * t.qty) > 0.5) s = v.toFixed(4); return s; };
+        return `<tr style="border-bottom:1px solid var(--card-bg);transition:background 0.1s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
+          <td style="padding:9px 18px;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted);white-space:nowrap">${t.date}</td>
+          <td style="padding:9px 10px"><span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagA(t.action)}">${t.action}</span></td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${t.action === 'SELL' ? '#f85149' : '#2ecc71'}" ${t._fills && t._fills.length > 1 ? `title="${t._fills.length} exécutions partielles (même ordre) : ${t._fills.map(f => f.qty).join(', ')}"` : ''}>${t.qty > 0 ? '+' : ''}${t.qty}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--c-muted)">${tcs}${pxAdapt(t.price || 0)}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--c-muted)">${tcs}${Math.abs(t.proceeds || 0).toFixed(2)}</td>
+          <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${t.fees ? tcs + Math.abs(t.fees).toFixed(2) : '—'}</td>
+          ${(() => {
+            const hasPnl = t.realizedPnl || (t._econOk && t.qty < 0);
+            if (!hasPnl) return `<td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:var(--c-dim)">—</td>`;
+            const pB = stockDispPnlBase(t), pO = stockDispPnl(t);
+            const tip = t._econOk ? `title="Jambe action seule — selon IBKR : ${t.realizedPnl >= 0 ? '+' : ''}${(t.realizedPnl || 0).toFixed(2)}"` : '';
+            return `<td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:${pB >= 0 ? '#00e5cc' : '#f85149'}" ${tip}>${pB > 0 ? '+' : ''}${fmt(pB)}${isFx ? ` <span style="color:var(--c-dim);font-size:9px">(${pO >= 0 ? '' : '-'}${tcs}${Math.abs(pO).toFixed(2)})</span>` : ''}${!t._econOk && t.realizedPnl ? ` <span style="color:var(--c-dim);font-size:9px" title="Chiffre IBKR — historique d'achat incomplet">IB</span>` : ''}</td>`;
+          })()}
+          <td style="padding:9px 18px">${t.assigned ? '<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:\'DM Mono\',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="Actions livrées/appelées via assignation d\'option">ASSIGNÉ</span>' : ''}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+
+  document.getElementById('equity-modal-content').innerHTML = `
+    <div style="padding:18px 22px;border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;color:${tickColor};letter-spacing:0.3px;font-family:'DM Mono',monospace">${ticker}</span>
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--c-text);letter-spacing:-0.2px">${name}</div>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px;font-family:'DM Mono',monospace">${subParts.join(' · ')}</div>
+        </div>
+      </div>
+      <button onclick="closeEquityModal()" style="background:var(--card-border);border:1px solid var(--card-border2);border-radius:8px;width:30px;height:30px;color:var(--c-muted);font-size:14px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+    ${kpiRow}
+    ${tabBar}
+    <div style="overflow-y:auto;flex:1">${tab === 'actions' ? actionsTable : optionsTable}</div>`;
+
+  document.getElementById('equity-modal').classList.add('open');
+}
+
+// Alias de compat — routent vers la modale unifiée avec l'onglet par défaut adapté à l'origine
+function openStockModal(ticker)  { openTickerModal(ticker, 'options'); }
+function openEquityModal(ticker) { openTickerModal(ticker, 'actions'); }
+function closeEquityModal() { document.getElementById('equity-modal').classList.remove('open'); }
+
+function renderEquities() {
+  computeStockEconPnl(); // remplit stockEconBasis (coût économique des positions ouvertes)
+  const asOf = accountKPI._stockPosAsOf || '';
+  const fmtAsOf = asOf
+    ? (() => { const [y,m,d] = asOf.split('-'); const months=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']; return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`; })()
+    : '';
+
+  // Enrichit chaque position : cours live si dispo (devise d'origine), sinon markPrice du relevé.
+  // Valeur en devise de base : taux du JOUR pour un cours live, sinon fxRateToBase du relevé.
+  // PRU/coût = ÉCONOMIQUE (coût d'achat réel, primes non déduites) si l'historique d'achat
+  // est complet, sinon repli sur le costBasisPrice/fifoPnlUnrealized IBKR du snapshot.
+  const rows = stockPositions.map(p => {
+    const live  = livePrices[p.ticker] || null;
+    const price = live || p.markPrice || 0;
+    const valueOrig = price * p.qty;
+    const valueBase = live ? toBaseToday(valueOrig, p.currency) : valueOrig * (p.fxRateToBase || 1);
+    const econ = stockEconPru(p.ticker, p.qty, p.costBasisPrice, p.costBasisMoney);
+    const pru      = econ.pru;
+    const costOrig = econ.cost;
+    const pnlOrig  = valueOrig - costOrig;
+    // P&L latent : live → conversion du jour ; snapshot → si base éco, recalcul valeur−coût,
+    // sinon fifoPnlUnrealized IBKR (cohérent avec le costBasisPrice non économique du repli).
+    const pnlBase  = live ? toBaseToday(pnlOrig, p.currency)
+                   : econ.ok ? pnlOrig * (p.fxRateToBase || 1)
+                   : (p.fifoPnlUnrealized || 0) * (p.fxRateToBase || 1);
+    const pnlPct   = costOrig !== 0 ? (pnlOrig / Math.abs(costOrig)) * 100 : 0;
+    return { ...p, live, price, valueOrig, valueBase, pru, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
+  }).sort((a, b) => Math.abs(b.valueBase) - Math.abs(a.valueBase));
+
+  const totalValue  = rows.reduce((s, r) => s + r.valueBase, 0);
+  const totalPnl    = rows.reduce((s, r) => s + r.pnlBase, 0);
+  const totalCost   = rows.reduce((s, r) => s + (r.valueBase - r.pnlBase), 0);
+  const totalPnlPct = totalCost !== 0 ? (totalPnl / Math.abs(totalCost)) * 100 : 0;
+  const nEtf    = rows.filter(r => r.subCategory === 'ETF').length;
+  const nStk    = rows.length - nEtf;
+  const hasLive = rows.some(r => r.live);
+  const top     = rows[0];
+  const topPct  = top && totalValue !== 0 ? (top.valueBase / totalValue) * 100 : 0;
+
+  const pnlColor = v => v > 0 ? '#00e5cc' : v < 0 ? 'var(--red)' : 'var(--c-muted)';
+  const sign = v => v > 0 ? '+' : '';
+
+  // ── Onglet P&L réalisé — événements de clôture, fills partiels regroupés par ordre,
+  // filtrés par l'année de la topbar, du plus récent au plus ancien.
+  // P&L affiché = jambe action ÉCONOMIQUE (FIFO sur coût d'achat réel, primes exclues) ;
+  // repli sur le fifoPnlRealized d'IBKR quand l'historique d'achat n'est pas importé.
+  computeStockEconPnl();
+  const realized = groupStockFills(
+    stockTrades.filter(t =>
+      (t.realizedPnl || (t._econOk && Math.abs(t._econPnl) > 0.005)) &&
+      (currentYear === 'ALL' || t.date.startsWith(currentYear)))
+  ).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+  const rTotal   = realized.reduce((s, t) => s + stockDispPnlBase(t), 0);
+  const rWins    = realized.filter(t => stockDispPnlBase(t) > 0).length;
+  const rLosses  = realized.filter(t => stockDispPnlBase(t) < 0).length;
+  const dateFR = d => { const [y,m,dd] = d.split('-'); const months=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']; return `${parseInt(dd)} ${months[parseInt(m)-1]} ${y.slice(2)}`; };
+
+  // Barre d'onglets — ligne de tête de la carte-table (sous les KPI), recherche + méta à droite
+  const eqTabs = right => `
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--card-border);padding:0 20px">
+        <div style="display:flex">
+          <button class="eq-tab-btn" onclick="switchEqTab('positions')" style="border-bottom:2px solid ${equitiesTab==='positions'?'#00e5cc':'transparent'};color:${equitiesTab==='positions'?'#00e5cc':'var(--c-muted)'}">Positions actuelles</button>
+          <button class="eq-tab-btn" onclick="switchEqTab('realized')" style="border-bottom:2px solid ${equitiesTab==='realized'?'#00e5cc':'transparent'};color:${equitiesTab==='realized'?'#00e5cc':'var(--c-muted)'}">Détail des P&L réalisés</button>
+          <button class="eq-tab-btn" onclick="switchEqTab('dividends')" style="border-bottom:2px solid ${equitiesTab==='dividends'?'#00e5cc':'transparent'};color:${equitiesTab==='dividends'?'#00e5cc':'var(--c-muted)'}">Dividendes</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
+          <div style="font-size:11px;color:var(--c-muted);font-family:'DM Mono',monospace;display:flex;align-items:center;gap:8px">${right}</div>
+          <div class="eq-search">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="var(--c-dim)"><path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.099zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/></svg>
+            <input id="eq-search-input" placeholder="${equitiesTab === 'positions' ? 'Ticker, nom…' : 'Ticker, date (ex: 2026-04)…'}" oninput="filterEqTable(this.value)"/>
+          </div>
+        </div>
+      </div>`;
+
+  const realizedEmpty = `
+      <div style="text-align:center;padding:70px 20px;color:var(--c-muted)">
+        <div style="font-size:34px;margin-bottom:14px">💰</div>
+        <div style="font-size:15px;font-weight:600;color:var(--c-text);margin-bottom:8px">Aucune plus/moins-value réalisée${currentYear !== 'ALL' ? ' en ' + currentYear : ''}</div>
+        <div style="font-size:12px;max-width:460px;margin:0 auto;line-height:1.6">
+          Les ventes d'actions/ETF (et rachats de shorts) apparaîtront ici avec leur P&L FIFO
+          calculé par IBKR, dès qu'un relevé XML ou CSV en contient.
+        </div>
+      </div>`;
+
+  const rWinRate = realized.length > 0 ? (rWins / realized.length) * 100 : 0;
+  const rAvg     = realized.length > 0 ? rTotal / realized.length : 0;
+  const realizedHtml = `
+    ${realized.length === 0 ? '' : `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">P&L réalisé${currentYear !== 'ALL' ? ' · ' + currentYear : ' total'}</div>
+        <div class="eq-kpi-val" style="color:${pnlColor(rTotal)}">${sign(rTotal)}${fmt(rTotal)}</div>
+        <div class="eq-kpi-sub">jambe action seule · hors primes & dividendes</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Clôtures</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${realized.length}</div>
+        <div class="eq-kpi-sub"><span style="color:#00e5cc">${rWins} gagnante${rWins!==1?'s':''}</span> · <span style="color:var(--red)">${rLosses} perdante${rLosses!==1?'s':''}</span></div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Taux de réussite</div>
+        <div class="eq-kpi-val" style="color:${rWinRate >= 50 ? '#00e5cc' : 'var(--orange)'}">${rWinRate.toFixed(0)}%</div>
+        <div class="eq-kpi-sub">des clôtures sont gagnantes</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">P&L moyen / clôture</div>
+        <div class="eq-kpi-val" style="color:${pnlColor(rAvg)}">${sign(rAvg)}${fmt(rAvg)}</div>
+        <div class="eq-kpi-sub">sur ${realized.length} clôture${realized.length!==1?'s':''}</div>
+      </div>
+    </div>`}
+
+    <div class="eq-wrap">
+      ${eqTabs(currentYear !== 'ALL' ? currentYear : '')}
+      ${realized.length === 0 ? realizedEmpty : `
+      <table class="eq-table">
+        <thead><tr>
+          <th>Ticker</th><th>Date</th><th style="text-align:right">Qté</th>
+          <th style="text-align:right">PRU</th>
+          <th style="text-align:right">Prix de revente</th><th style="text-align:right">Total</th>
+          <th style="text-align:right">Frais</th><th style="text-align:right">P&L réalisé</th><th>CCY</th>
+        </tr></thead>
+        <tbody>${realized.map(t => {
+          const cs = ccySym(t.currency);
+          const isFx = t.currency && t.currency !== BASE_CCY;
+          // PRU (prix de revient MOYEN) du lot clôturé — 3 niveaux :
+          // 1. ÉCONOMIQUE (modèle OLT) : PRU moyen pondéré de la position (_econCost) — pour une
+          //    assignation = strike × qté + frais, les primes restent dans « Primes collectées ».
+          // 2. Base IBKR du lot (costBasis) — ajustée des primes assignées (repli si l'historique
+          //    d'achat n'est pas importé) : le P&L affiché repasse alors sur le chiffre IBKR.
+          // 3. Reconstruction produits−P&L (données importées avant l'ajout de costBasis).
+          const pnlB = stockDispPnlBase(t);
+          const pnlO = stockDispPnl(t);
+          const pruExact = t.costBasis != null && t.qty ? t.costBasis / Math.abs(t.qty) : null;
+          const costTotal = (t.proceeds || 0) + (t.fees || 0) - (t.realizedPnl || 0);
+          const pru = t._econOk && t.qty ? t._econCost / Math.abs(t.qty)
+                    : pruExact != null ? pruExact
+                    : (t.qty ? Math.abs(costTotal / t.qty) : 0);
+          const ibNote = `selon IBKR : P&L ${t.realizedPnl >= 0 ? '+' : ''}${(t.realizedPnl || 0).toFixed(2)}${t.costBasis != null ? ', base ' + t.costBasis.toFixed(2) : ''}${t.assigned ? ' (primes des options assignées intégrées)' : ''}`;
+          const pruTip = t._econOk
+            ? `PRU moyen de la position au moment de la vente (coût d'achat réel, primes non déduites) — coût du lot : ${cs}${t._econCost.toFixed(2)} — ${ibNote}`
+            : pruExact != null
+            ? `Base IBKR du lot : ${cs}${t.costBasis.toFixed(2)}${t.assigned ? ' — primes des options assignées intégrées par IBKR (base ajustée)' : ' — frais d\'achat inclus'}`
+            : `PRU reconstruit (ré-importez le relevé pour la base IBKR exacte) : ${cs}${(t.qty ? Math.abs(costTotal / t.qty) : 0).toFixed(4)}`;
+          // Décimales : 2 par défaut, mais 3-4 si l'arrondi fausserait le calcul
+          // (revente − PRU) × qté de plus de 0,50 (cas des grosses quantités à petit prix).
+          // Appliqué au PRU ET au prix de revente pour que la vérification manuelle tombe juste.
+          const pxAdapt = v => {
+            let s = v.toFixed(2);
+            if (Math.abs((v - parseFloat(s)) * t.qty) > 0.5) s = v.toFixed(3);
+            if (Math.abs((v - parseFloat(s)) * t.qty) > 0.5) s = v.toFixed(4);
+            return s;
+          };
+          const pruStr = pxAdapt(pru);
+          return `<tr data-eq-ticker="${t.ticker}" data-date="${t.date}">
+            <td><span class="eq-tick ${tickCcyClass(t.currency)}">${t.ticker}</span>${t.assigned ? ' <span class="eq-atag">ASSIGNÉ</span>' : ''}</td>
+            <td class="mono" style="font-size:11px;color:var(--c-muted)">${dateFR(t.date)}</td>
+            <td class="mono" style="text-align:right;color:${t.qty < 0 ? 'var(--c-text)' : 'var(--orange)'}" ${t._fills && t._fills.length > 1 ? `title="${t._fills.length} exécutions partielles (même ordre) : ${t._fills.map(f => f.qty).join(', ')}"` : ''}>${t.qty}</td>
+            <td class="mono neu" style="text-align:right" ${pru ? `title="${pruTip}"` : ''}>${pru ? cs + pruStr : '—'}</td>
+            <td class="mono neu" style="text-align:right">${cs}${pxAdapt(t.price || 0)}</td>
+            <td class="mono neu" style="text-align:right">${cs}${Math.abs(t.proceeds || 0).toFixed(2)}</td>
+            <td class="mono neu" style="text-align:right">${t.fees ? cs + Math.abs(t.fees).toFixed(2) : '—'}</td>
+            <td class="mono" style="text-align:right;font-weight:700;color:${pnlColor(pnlB)}" ${t._econOk ? `title="Jambe action seule (primes comptées dans Primes collectées) — ${ibNote}"` : ''}>${sign(pnlB)}${fmt(pnlB)}${isFx ? ` <span style="color:var(--text-dim);font-size:9px">(${pnlO >= 0 ? '' : '-'}${cs}${Math.abs(pnlO).toFixed(2)})</span>` : ''}${!t._econOk ? ` <span style="color:var(--c-dim);font-size:9px" title="Chiffre IBKR (primes assignées éventuellement incluses) — importez l'historique d'achat complet pour la jambe économique">IB</span>` : ''}</td>
+            <td><span class="pill ${(t.currency||'usd').toLowerCase()}">${t.currency}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`}
+    </div>`;
+
+  // ── Onglet Dividendes — flux DIV/TAX appariés par ticker+date+devise → brut / retenue / net,
+  // filtrés par l'année de la topbar, du plus récent au plus ancien.
+  const divGroups = (() => {
+    const map = {};
+    stockDividends
+      .filter(d => currentYear === 'ALL' || d.date.startsWith(currentYear))
+      .forEach(d => {
+        const key = `${d.ticker}|${d.date}|${d.currency}`;
+        if (!map[key]) map[key] = { ticker: d.ticker, date: d.date, currency: d.currency, perShare: 0, gross: 0, tax: 0, grossBase: 0, taxBase: 0 };
+        const g = map[key];
+        if (d.kind === 'TAX') { g.tax += d.amount; g.taxBase += d.amountBase; }
+        else { g.gross += d.amount; g.grossBase += d.amountBase; if (d.perShare) g.perShare = d.perShare; }
+      });
+    return Object.values(map)
+      .map(g => ({ ...g, net: g.gross + g.tax, netBase: g.grossBase + g.taxBase }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  })();
+  const dvNet   = divGroups.reduce((s, g) => s + g.netBase, 0);
+  const dvGross = divGroups.reduce((s, g) => s + g.grossBase, 0);
+  const dvTax   = divGroups.reduce((s, g) => s + g.taxBase, 0);
+  const dvCount = divGroups.filter(g => g.gross !== 0).length;
+
+  const dividendsHtml = `
+    ${divGroups.length === 0 ? '' : `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Dividendes nets${currentYear !== 'ALL' ? ' · ' + currentYear : ''}</div>
+        <div class="eq-kpi-val" style="color:${pnlColor(dvNet)}">${sign(dvNet)}${fmt(dvNet)}</div>
+        <div class="eq-kpi-sub">après retenues à la source</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Dividendes bruts</div>
+        <div class="eq-kpi-val" style="color:var(--c-text)">${fmt(dvGross)}</div>
+        <div class="eq-kpi-sub">avant retenues</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Retenues à la source</div>
+        <div class="eq-kpi-val" style="color:${dvTax < 0 ? 'var(--red)' : 'var(--c-muted)'}">${fmt(dvTax)}</div>
+        <div class="eq-kpi-sub">${dvGross !== 0 ? Math.abs(dvTax / dvGross * 100).toFixed(1) + '% du brut' : ''}</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Versements</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${dvCount}</div>
+        <div class="eq-kpi-sub">${[...new Set(divGroups.map(g => g.ticker))].length} ticker${new Set(divGroups.map(g => g.ticker)).size > 1 ? 's' : ''}</div>
+      </div>
+    </div>`}
+
+    <div class="eq-wrap">
+      ${eqTabs(currentYear !== 'ALL' ? currentYear : '')}
+      ${divGroups.length === 0 ? `
+      <div style="text-align:center;padding:70px 20px;color:var(--c-muted)">
+        <div style="font-size:34px;margin-bottom:14px">💵</div>
+        <div style="font-size:15px;font-weight:600;color:var(--c-text);margin-bottom:8px">Aucun dividende${currentYear !== 'ALL' ? ' en ' + currentYear : ''}</div>
+        <div style="font-size:12px;max-width:460px;margin:0 auto;line-height:1.6">
+          Les dividendes (et retenues à la source) apparaîtront ici dès qu'un relevé XML
+          ou CSV en contient.
+        </div>
+      </div>` : `
+      <table class="eq-table">
+        <thead><tr>
+          <th>Ticker</th><th>Date</th><th style="text-align:right">Par action</th>
+          <th style="text-align:right">Brut</th><th style="text-align:right">Retenue</th>
+          <th style="text-align:right">Net</th><th>CCY</th>
+        </tr></thead>
+        <tbody>${divGroups.map(g => {
+          const cs = ccySym(g.currency);
+          const isFx = g.currency && g.currency !== BASE_CCY;
+          return `<tr data-eq-ticker="${g.ticker}" data-date="${g.date}">
+            <td><span class="eq-tick ${tickCcyClass(g.currency)}">${g.ticker}</span></td>
+            <td class="mono" style="font-size:11px;color:var(--c-muted)">${dateFR(g.date)}</td>
+            <td class="mono neu" style="text-align:right">${g.perShare ? cs + parseFloat(g.perShare.toFixed(4)) : '—'}</td>
+            <td class="mono neu" style="text-align:right">${cs}${g.gross.toFixed(2)}</td>
+            <td class="mono" style="text-align:right;color:${g.tax < 0 ? 'var(--red)' : 'var(--c-muted)'}">${g.tax !== 0 ? (g.tax < 0 ? '-' : '') + cs + Math.abs(g.tax).toFixed(2) : '—'}</td>
+            <td class="mono" style="text-align:right;font-weight:700;color:${pnlColor(g.netBase)}">${sign(g.netBase)}${fmt(g.netBase)}${isFx ? ` <span style="color:var(--text-dim);font-size:9px">(${g.net >= 0 ? '' : '-'}${cs}${Math.abs(g.net).toFixed(2)})</span>` : ''}</td>
+            <td><span class="pill ${(g.currency||'usd').toLowerCase()}">${g.currency}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`}
+    </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <style>
+      .eq-kpi { background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px; }
+      .eq-kpi-label { font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px; }
+      .eq-kpi-val   { font-size:22px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-0.5px; }
+      .eq-kpi-sub   { font-size:11px;color:var(--c-muted);margin-top:5px;font-family:'DM Mono',monospace; }
+      .eq-wrap      { background:var(--card-surface);border:1px solid var(--card-border);border-radius:14px;overflow:hidden; }
+      .eq-table     { width:100%;border-collapse:collapse; }
+      .eq-table thead th { padding:10px 12px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid var(--card-border);background:var(--card-surface);white-space:nowrap; }
+      .eq-table thead th:first-child { padding-left:20px; }
+      .eq-table tbody tr { border-bottom:1px solid var(--card-bg); }
+      .eq-table tbody tr:hover td { background:rgba(255,255,255,0.02); }
+      .eq-table tbody td { padding:9px 12px;vertical-align:middle; }
+      .eq-table tbody td:first-child { padding-left:20px; }
+      /* Chiffres secondaires : même teinte bleutée que la page Open Positions (var(--c-muted)) */
+      .eq-table .neu { color:var(--c-muted)!important; }
+      .eq-tick { display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#00e5cc;letter-spacing:0.3px;font-family:'DM Mono',monospace; }
+      .eq-tick.fx { color:#c4b5fd; }
+      .eq-tick.fx-oth { color:var(--orange); }
+      .eq-etf  { display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.12);color:#c4b5fd;border:1px solid rgba(196,181,253,0.25); }
+      .eq-atag { display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.12);color:var(--orange);border:1px solid rgba(240,136,62,0.25);margin-left:5px; }
+      .eq-bar-bg { background:var(--card-border);border-radius:3px;height:4px;width:64px;overflow:hidden;display:inline-block;vertical-align:middle; }
+      .eq-tab-btn { padding:11px 18px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;transition:all 0.15s; }
+      .eq-search { background:var(--page-bg);border:1px solid var(--card-border);border-radius:8px;padding:5px 11px;display:flex;align-items:center;gap:8px; }
+      .eq-search input { background:none;border:none;outline:none;color:var(--c-text);font-size:12px;font-family:'DM Sans',sans-serif;width:180px; }
+      .eq-search input::placeholder { color:var(--c-dim); }
+    </style>
+
+    ${equitiesTab === 'realized' ? realizedHtml : equitiesTab === 'dividends' ? dividendsHtml : `
+    ${rows.length === 0 ? '' : `
+    <!-- KPI row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Valeur totale des actions/ETF</div>
+        <div class="eq-kpi-val" style="color:var(--c-text)">${fmt(totalValue)}</div>
+        <div class="eq-kpi-sub">${hasLive ? 'Cours live' : `Snapshot relevé${fmtAsOf ? ' · ' + fmtAsOf : ''}`}</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">P&L latent</div>
+        <div class="eq-kpi-val" style="color:${pnlColor(totalPnl)}">${sign(totalPnl)}${fmt(totalPnl)}</div>
+        <div class="eq-kpi-sub" style="color:${pnlColor(totalPnl)};font-weight:600">${sign(totalPnlPct)}${totalPnlPct.toFixed(2)}% du coût</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Positions</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${rows.length}</div>
+        <div class="eq-kpi-sub">${nStk} action${nStk!==1?'s':''} · ${nEtf} ETF</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Plus grosse ligne</div>
+        <div class="eq-kpi-val" style="color:var(--c-text);font-size:18px">${top ? top.ticker : '—'}</div>
+        <div class="eq-kpi-sub">${top ? topPct.toFixed(1) + '% du portefeuille actions' : ''}</div>
+      </div>
+    </div>`}
+
+    <div class="eq-wrap">
+      ${eqTabs(`<span id="price-updated" style="color:var(--c-dim);font-size:10px"></span><span>${fmtAsOf ? 'Relevé au ' + fmtAsOf : ''}</span>`)}
+      ${rows.length === 0 ? `
+      <div style="text-align:center;padding:70px 20px;color:var(--c-muted)">
+        <div style="font-size:34px;margin-bottom:14px">📊</div>
+        <div style="font-size:15px;font-weight:600;color:var(--c-text);margin-bottom:8px">Aucune position action ou ETF</div>
+        <div style="font-size:12px;max-width:440px;margin:0 auto;line-height:1.6">
+          Importez un relevé XML ou CSV (ou synchronisez votre Flex Query) incluant la classe d'actifs
+          <b>Actions</b> — les positions ouvertes apparaîtront ici automatiquement.
+        </div>
+      </div>` : `
+      <table class="eq-table">
+        <thead><tr>
+          <th>Ticker</th><th>Nom</th><th style="text-align:right">Qté</th>
+          <th style="text-align:right">PRU</th>
+          <th style="text-align:right" title="PRU − primes d'options nettes du ticker ÷ nb d'actions">PRU ajusté</th>
+          <th style="text-align:right">Cours</th>
+          <th style="text-align:right">Valeur</th><th style="text-align:right">P&L latent</th>
+          <th style="text-align:right">P&L %</th><th>Poids</th><th>CCY</th>
+        </tr></thead>
+        <tbody>${rows.map(r => {
+          const cs = ccySym(r.currency);
+          const weight = totalValue !== 0 ? (r.valueBase / totalValue) * 100 : 0;
+          const isFx = r.currency && r.currency !== BASE_CCY;
+          // PRU ajusté (logique wheel) : PRU économique − primes d'options nettes du ticker ÷ nb d'actions.
+          // Positions longues uniquement (le concept n'a pas de sens sur un short).
+          const prem = tickerNetPremiumOrig(r.ticker, r.currency);
+          const pruAdj = prem.count > 0 && r.qty > 0 ? r.pru - prem.sum / r.qty : null;
+          const pruTip = r.econOk
+            ? `Coût d'achat réel moyen (primes comptées dans « Primes collectées », non déduites ici)`
+            : `PRU du relevé IBKR (primes des options assignées déduites) — importez l'historique d'achat complet pour le coût économique`;
+          return `<tr data-eq-ticker="${r.ticker}" data-name="${(r.description || '').replace(/"/g, '&quot;')}">
+            <td><span class="eq-tick ${tickCcyClass(r.currency)}">${r.ticker}</span>${r.subCategory === 'ETF' ? ' <span class="eq-etf">ETF</span>' : ''}</td>
+            <td style="font-size:11px;color:var(--c-muted);max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
+            <td class="mono" style="text-align:right;color:${r.qty < 0 ? 'var(--red)' : 'var(--c-text)'}">${r.qty}</td>
+            <td class="mono neu" style="text-align:right" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
+            <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${prem.sum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
+            <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
+            <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? ` <span style="color:var(--text-dim);font-size:9px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</span>` : ''}</td>
+            <td class="mono" style="text-align:right;color:${pnlColor(r.pnlBase)};font-weight:600">${sign(r.pnlBase)}${fmt(r.pnlBase)}</td>
+            <td class="mono" style="text-align:right;color:${pnlColor(r.pnlPct)}">${sign(r.pnlPct)}${r.pnlPct.toFixed(2)}%</td>
+            <td><span class="eq-bar-bg"><span style="display:block;height:4px;border-radius:3px;width:${Math.min(100, Math.abs(weight)).toFixed(1)}%;background:#00e5cc"></span></span> <span class="mono" style="font-size:10px;color:var(--c-muted)">${Math.abs(weight).toFixed(1)}%</span></td>
+            <td><span class="pill ${(r.currency||'usd').toLowerCase()}">${r.currency}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`}
+    </div>`}`;
+
+  // Ré-applique la recherche en cours (survit aux re-renders : refresh prix, switch d'onglet)
+  if (eqSearchQ) {
+    const inp = document.getElementById('eq-search-input');
+    if (inp) { inp.value = eqSearchQ; filterEqTable(eqSearchQ); }
+  }
+}
 
 function renderPositions() {
   const open = transactions.filter(t=>t.status==='Open').sort((a,b)=>new Date(a.expiry)-new Date(b.expiry));
@@ -3446,6 +4287,7 @@ function renderPositions() {
       .pos-table tbody td:first-child { padding-left:20px; }
       .pos-tick { display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#00e5cc;letter-spacing:0.3px;font-family:'DM Mono',monospace; }
       .pos-tick.fx { color:#c4b5fd;border-color:var(--card-border2);background:var(--tick-bg); }
+      .pos-tick.fx-oth { color:var(--orange);border-color:var(--card-border2);background:var(--tick-bg); }
       .pos-ptag { display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace; }
     </style>
 
@@ -3555,7 +4397,7 @@ function renderPositions() {
           const ptType   = t.type==='C'?['rgba(0,229,204,0.12)','#00e5cc']:['rgba(248,81,73,0.15)','#f85149'];
           return `<tr data-ticker="${t.ticker}">
             <td>
-              <span class="pos-tick ${isFx?'fx':''}">${t.ticker}</span>
+              <span class="pos-tick ${tickCcyClass(t.currency)}">${t.ticker}</span>
             </td>
             <td><span class="pos-ptag" style="background:${ptAction[0]};color:${ptAction[1]}">${t.action}</span></td>
             <td><span class="pos-ptag" style="background:${ptType[0]};color:${ptType[1]}">${t.type==='C'?'CALL':'PUT'}</span></td>
@@ -3569,7 +4411,7 @@ function renderPositions() {
             ${coursHtml}
             ${distHtml}
             <td style="text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:${days<=7?'700':days<=14?'600':'400'};color:${urgency}">${days<=7?'⚠ ':''}${days}d</td>
-            <td><span class="pos-ptag" style="background:rgba(125,133,144,0.12);color:var(--c-muted)">${t.currency}</span></td>
+            <td><span class="pill ${(t.currency||'usd').toLowerCase()}">${t.currency}</span></td>
           </tr>`;
         }).join('')}</tbody>
       </table>` : positionsTab === 'calendar' ? `
@@ -3598,8 +4440,8 @@ function renderPositions() {
               return `<tr>
                 <td style="padding:6px 12px">
                   <div style="display:flex;align-items:center;gap:6px">
-                    <span class="tick">${ticker}</span>
-                    ${isFx?`<span class="pill eur" style="font-size:9px">${tickerTxs[0]?.currency || 'FX'}</span>`:''}
+                    <span class="tick ${tickCcyClass(tickerTxs[0]?.currency)}">${ticker}</span>
+                    ${isFx?`<span class="pill ${(tickerTxs[0]?.currency||'eur').toLowerCase()}" style="font-size:9px">${tickerTxs[0]?.currency || 'FX'}</span>`:''}
                   </div>
                 </td>
                 ${expiries.map(e => {
@@ -4080,100 +4922,7 @@ function loadSectorData(groupBy, optType) {
   }
 }
 
-// ── Modal
-function openStockModal(ticker) {
-  const txs    = transactions.filter(t=>t.ticker===ticker);
-  const txsGrp = groupFills(txs);
-  const net = txsGrp.reduce((s,t)=>s+txNet(t), 0);
-  const openGrouped = groupOpenPositions(txs.filter(t=>t.status==='Open'));
-  const openCount = openGrouped.length;
 
-  // Displayed rows = grouped fills minus the $0 buy-to-close entries IB creates
-  // when an option expires worthless. Count THESE so "Total trades" and the
-  // header match the table the user actually sees (fixes 10-vs-7 mismatch).
-  const grouped = groupFills(txs)
-    .filter(isRealTrade)
-    .sort((a, b) => {
-      if (b.date !== a.date) return b.date > a.date ? 1 : -1;
-      // same date: SELL before BUY
-      return a.action === b.action ? 0 : (a.action === 'SELL' ? -1 : 1);
-    });
-
-  const modalCcy = (txs.reduce((latest, t) => t.date >= latest.date ? t : latest, txs[0]))?.currency ?? 'USD';
-  const modalTickerEl = document.getElementById('modal-ticker');
-  modalTickerEl.textContent = ticker;
-  modalTickerEl.style.color = modalCcy !== 'USD' ? '#c4b5fd' : '#00e5cc';
-  // Show company name from SECTORS_DB if available
-  const sectorInfo = getSectorInfo(ticker);
-  document.getElementById('modal-name').textContent = sectorInfo?.company || ticker;
-  document.getElementById('modal-sub').textContent = `${grouped.length} trades · ${modalCcy}${sectorInfo?.sector ? ' · ' + sectorInfo.sector : ''}`;
-  const modalPremiumEl = document.getElementById('modal-premium');
-  modalPremiumEl.textContent = fmt(net);
-  modalPremiumEl.style.color = net >= 0 ? '#2ecc71' : '#f85149'; // rouge si prime nette négative
-  document.getElementById('modal-trades').textContent = grouped.length;
-  const openEl = document.getElementById('modal-open');
-  openEl.textContent = openCount>0 ? `${openCount}` : 'Aucune position ouverte';
-  openEl.style.color = openCount>0 ? '#00e5cc' : '#ffffff';
-  openEl.style.fontSize = '18px';
-
-  const tagA = a => a==='SELL'?'background:rgba(248,81,73,0.15);color:#f85149':'background:rgba(46,160,67,0.15);color:#2ecc71';
-  const tagT = t => t==='C'?'background:rgba(0,229,204,0.12);color:#00e5cc':'background:rgba(248,81,73,0.15);color:#f85149';
-  const tagS = s => s==='Expired'?'background:rgba(188,140,255,0.12);color:#bc8cff':s==='Closed'?'background:rgba(125,133,144,0.15);color:#7d8590':'background:rgba(31,111,235,0.15);color:#1f6feb';
-
-  document.getElementById('modal-tbody').innerHTML = grouped
-    .flatMap(t => {
-      const isFx = t.currency && t.currency !== BASE_CCY;
-      const sym = t.currency === 'EUR' ? '€' : (t.currency || '') + ' ';
-      const net = txNet(t);
-      const partialD = t.action === 'SELL' ? getPartialDetails(t) : null;
-      const isExp    = expandedRows.has(String(t.id));
-      const isPreConv    = t.fxRate && t.fxRate !== 1 && isFx;
-      const premDispBase = isPreConv ? t.premiumCollected : toBase(t.premiumCollected, t.currency, t.date);
-      const feesDispBase = isPreConv ? (t.fees || 0)      : toBase(t.fees || 0, t.currency, t.date);
-      const premDispOrig = isPreConv ? (t.premiumOrig != null ? t.premiumOrig : t.premiumCollected) : t.premiumCollected;
-      const feesDispOrig = isPreConv ? (t.feesOrig  != null ? t.feesOrig    : (t.fees || 0))       : (t.fees || 0);
-
-      const mainRow = `<tr style="border-bottom:1px solid var(--card-bg);transition:background 0.1s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
-        <td style="padding:9px 18px;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted);white-space:nowrap">${t.date}</td>
-        <td style="padding:9px 10px"><span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagA(t.action)}">${t.action}</span></td>
-        <td style="padding:9px 10px"><span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;${tagT(t.type)}">${t.type==='C'?'CALL':'PUT'}</span></td>
-        <td style="padding:9px 10px;font-family:'DM Mono',monospace;font-size:12px;color:var(--c-text)">${ccySym(t.currency)}${t.strike}</td>
-        <td style="padding:9px 10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${t.expiry}</td>
-        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${t.action==='SELL'?'#f85149':'#2ecc71'}">${t.action==='SELL'?'-':'+'}${t.qty}</td>
-        <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:${t.premiumCollected>=0?'#00e5cc':'#f85149'}">${fmt(premDispBase)}${isFx?`<span style="color:var(--c-dim);font-size:9px;margin-left:3px">(${sym}${Math.abs(premDispOrig).toFixed(2)})</span>`:''}</td>
-        <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${feesDispBase!==0?fmt(feesDispBase)+(isFx?`<span style="color:var(--c-dim);font-size:9px;margin-left:3px">(${sym}${Math.abs(feesDispOrig).toFixed(2)})</span>`:''):'—'}</td>
-        <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:${net>=0?'#00e5cc':'#f85149'}">${fmtWithFx(t)}</td>
-        <td style="padding:9px 18px">
-          <div style="display:flex;align-items:center;gap:5px">
-            ${partialD ? `<button onclick="event.stopPropagation();toggleRowDetail('${t.id}')" style="background:none;border:none;cursor:pointer;color:#f0883e;font-size:13px;padding:0;line-height:1;opacity:0.8" title="Voir le détail de l'assignation partielle">${isExp ? '▾' : '▸'}</button>` : ''}
-            ${t.exercised
-              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
-              : t.action === 'SELL' && t.assigned
-              ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
-              : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;${tagS(t.status)}">${t.status}</span>`
-            }
-          </div>
-        </td>
-      </tr>`;
-
-      if (partialD && isExp) {
-        const subRow = `<tr style="background:rgba(240,136,62,0.04);border-bottom:1px solid var(--card-bg)">
-          <td colspan="10" style="padding:5px 18px 8px 28px">
-            <div style="display:flex;gap:20px;font-size:11px;font-family:'DM Mono',monospace;flex-wrap:wrap">
-              <span style="color:#f0883e">▸ ${partialD.assignedQty} contrat${partialD.assignedQty>1?'s':''} assigné${partialD.assignedQty>1?'s':''}<span style="color:var(--c-dim);margin-left:5px">(${partialD.assignedDate})</span></span>
-              <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty>1?'s':''} fermé${partialD.closedQty>1?'s':''} · ${fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
-            </div>
-          </td>
-        </tr>`;
-        return [mainRow, subRow];
-      }
-      return [mainRow];
-    }).join('');
-
-  document.getElementById('stock-modal').classList.add('open');
-}
-
-function closeModal() { document.getElementById('stock-modal').classList.remove('open'); }
 function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
 function addTransaction() {
   const ticker   = document.getElementById('f-ticker').value.toUpperCase().trim();
@@ -4220,7 +4969,7 @@ function confirmGoal() {
 
 // ── Persistent state (localStorage)
 const IB_STORAGE_KEY   = 'ib_flexquery_config';
-const DATA_STORAGE_KEY = 'optionstrack_data';
+const DATA_STORAGE_KEY = 'optionstrack_data'; // clé de données prod (V2 unifiée)
 
 function saveAppData() {
   try {
@@ -4230,6 +4979,10 @@ function saveAppData() {
       monthlyGoal:   monthlyGoal,
       tickerAliases: TICKER_ALIASES,
       yahooResolved: resolvedYahoo,
+      stockPositions: stockPositions, // V2 — snapshot actions/ETF
+      // V2 — historique trades actions, SANS les champs dérivés _econ* (recalculés au rendu)
+      stockTrades:    stockTrades.map(t => { const { _econCost, _econPnl, _econPnlBase, _econOk, ...rest } = t; return rest; }),
+      stockDividends: stockDividends, // V2 — historique dividendes (+ retenues)
       savedAt:       new Date().toISOString(),
     };
     const json = JSON.stringify(payload);
@@ -4248,7 +5001,7 @@ function saveAppData() {
           multiplier: t.multiplier, transactionID: t.transactionID, ibOrderID: t.ibOrderID,
           assigned: t.assigned, exercised: t.exercised,
         }));
-        const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, savedAt: new Date().toISOString(), slim: true };
+        const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, stockPositions, stockTrades, stockDividends, savedAt: new Date().toISOString(), slim: true };
         localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(payload2));
         console.log('[OLT Tracker] saveAppData slim OK');
       } catch(e2) {
@@ -4292,6 +5045,19 @@ function loadAppData() {
     // Restaure le cache de résolution Yahoo (ex. VOW3 → VOW3.DE)
     if (payload.yahooResolved && typeof payload.yahooResolved === 'object') {
       Object.assign(resolvedYahoo, payload.yahooResolved);
+    }
+    // V2 — snapshot positions actions/ETF + historique trades actions
+    if (Array.isArray(payload.stockPositions)) {
+      stockPositions.length = 0;
+      payload.stockPositions.forEach(p => stockPositions.push(p));
+    }
+    if (Array.isArray(payload.stockTrades)) {
+      stockTrades.length = 0;
+      payload.stockTrades.forEach(t => stockTrades.push(t));
+    }
+    if (Array.isArray(payload.stockDividends)) {
+      stockDividends.length = 0;
+      payload.stockDividends.forEach(d => stockDividends.push(d));
     }
     // Migration: fix SELL trades incorrectly marked 'Expired' when actually assigned
     transactions.forEach(t => {
@@ -4414,35 +5180,31 @@ function updateSidebarDot() {
 //   Step 2: GET GetStatement with ref code → download XML
 // Both calls must go through a CORS proxy since IB blocks direct browser requests.
 
-const CORS_PROXIES = [
-  '/api/proxy?url=',          // Vercel serverless proxy (priorité absolue)
-  'https://corsproxy.io/?',
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.org/?',
-  'https://proxy.cors.sh/',
-  'https://thingproxy.freeboard.io/fetch/',
-];
+// SÉCURITÉ — l'URL Flex contient le TOKEN IBKR en paramètre (t=...). Elle ne doit
+// transiter QUE par notre propre proxy serveur (/api/proxy, hôtes IBKR allowlistés).
+// Aucun proxy CORS public tiers ici : ils recevraient le token en clair et pourraient
+// le logguer. Le token est en lecture seule, mais il expose positions/transactions/NAV.
+// (Les cours Yahoo — données non sensibles — ont leur propre chaîne dans fetchYahooQuote.)
+const IB_PROXY = '/api/proxy?url=';
 
 async function ibFetchWithProxy(url) {
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-      const res = await fetch(proxy + encodeURIComponent(url), {
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/xml,application/xml,*/*' },
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.length > 50) return text;
-      }
-    } catch(e) {
-      ibLog(`⚠️ Proxy ${proxy.slice(8,28)}... échoué`, 'warn');
-      continue;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const res = await fetch(IB_PROXY + encodeURIComponent(url), {
+      headers: { 'Accept': 'text/xml,application/xml,*/*' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const text = await res.text();
+      if (text && text.length > 50) return text;
     }
+    throw new Error(`proxy a répondu ${res.status}`);
+  } catch(e) {
+    ibLog(`⚠️ Proxy sécurisé indisponible (${e.message})`, 'warn');
+    throw new Error("La synchronisation Flex nécessite le proxy sécurisé d'OLT Tracker (accessible depuis olt-tracker.app). En attendant, vous pouvez importer votre relevé en XML ou CSV.");
   }
-  throw new Error('Tous les proxies CORS ont échoué. Réessayez dans quelques instants.');
 }
 
 async function ibFlexQueryStep1(token, queryId) {
@@ -4502,6 +5264,10 @@ function ibParseXML(xmlText) {
     cashTxDetails: [],
     twr: null,
     flexFromDate: '', flexToDate: '', // populated below from FlexStatement attributes
+    stockPositions: [], stockPositionsAsOf: '', // V2 — snapshot actions/ETF
+    stockTrades: [], // V2 — trades actions (P&L réalisé via fifoPnlRealized)
+    stockDividends: [], // V2 — dividendes (DIV) et retenues à la source (TAX)
+    hasStockData: false, // true si le XML contient AU MOINS un nœud STK (la Flex Query inclut la classe actions)
   };
 
   // ── Flex Query period bounds — used to filter deposits to the declared period only
@@ -4651,6 +5417,120 @@ function ibParseXML(xmlText) {
     result.openPositions.push({
       ticker, type: putCall === 'C' ? 'C' : 'P', expiry: normDate(expiry),
       strike, qty: Math.abs(position), action: position < 0 ? 'SELL' : 'BUY', currency,
+    });
+  });
+
+  // ── V2 : positions ACTIONS/ETF — <OpenPosition assetCategory="STK"> (snapshot IBKR).
+  // hasStockData = la Flex Query inclut la classe actions (nœud STK quelconque, même un
+  // simple trade) → autorise ibMergeData à remplacer le snapshot, y compris par une liste
+  // vide (tout vendu). Une query options-only ne touche jamais au snapshot existant.
+  result.hasStockData = !!doc.querySelector('[assetCategory="STK"]');
+  doc.querySelectorAll('OpenPosition').forEach(node => {
+    if ((node.getAttribute('assetCategory') || '') !== 'STK') return;
+    // Certains formats Flex ventilent par lot (levelOfDetail="LOT") en plus du SUMMARY —
+    // on ne garde que le niveau agrégé pour éviter les doublons.
+    const lod = node.getAttribute('levelOfDetail') || '';
+    if (lod && lod !== 'SUMMARY') return;
+    const ticker   = (node.getAttribute('symbol') || '').trim();
+    const qty      = parseFloat(node.getAttribute('position')) || 0;
+    if (!ticker || !qty) return;
+    const reportDate = normDate(node.getAttribute('reportDate') || '');
+    result.stockPositions.push({
+      ticker,
+      description: node.getAttribute('description') || '',
+      subCategory: node.getAttribute('subCategory') || '', // COMMON, ETF, REIT…
+      qty, // signé (négatif = short)
+      currency:     node.getAttribute('currency') || 'USD',
+      fxRateToBase: parseFloat(node.getAttribute('fxRateToBase')) || 1,
+      markPrice:     parseFloat(node.getAttribute('markPrice')) || 0,
+      costBasisPrice: parseFloat(node.getAttribute('costBasisPrice') || node.getAttribute('openPrice')) || 0,
+      costBasisMoney: parseFloat(node.getAttribute('costBasisMoney')) || 0,
+      positionValue:  parseFloat(node.getAttribute('positionValue')) || 0,
+      fifoPnlUnrealized: parseFloat(node.getAttribute('fifoPnlUnrealized')) || 0,
+      percentOfNAV:  parseFloat(node.getAttribute('percentOfNAV')) || 0,
+      listingExchange: node.getAttribute('listingExchange') || '',
+      isin: node.getAttribute('isin') || '',
+      reportDate,
+    });
+    if (reportDate > result.stockPositionsAsOf) result.stockPositionsAsOf = reportDate;
+  });
+  if (!result.stockPositionsAsOf) result.stockPositionsAsOf = result.flexToDate || '';
+
+  // ── V2 : TRADES actions/ETF — <Trade assetCategory="STK"> (+ TradeConfirm).
+  // Sert au P&L réalisé : fifoPnlRealized est calculé par IBKR en méthode FIFO,
+  // en DEVISE DU TRADE → realizedPnlBase = fifoPnlRealized × fxRateToBase.
+  // notes "A" = assignation (stock livré/appelé via option), transactionType "BookTrade" idem.
+  const _seenStkTradeIds = new Set();
+  [...doc.querySelectorAll('Trade'), ...doc.querySelectorAll('TradeConfirm')].forEach(node => {
+    if ((node.getAttribute('assetCategory') || '') !== 'STK') return;
+    const qty = parseFloat(node.getAttribute('quantity')) || 0;
+    if (!qty) return;
+    const ticker = (node.getAttribute('symbol') || '').trim();
+    const tradeDate = normDate(node.getAttribute('tradeDate') || node.getAttribute('date') || '');
+    if (!ticker || !tradeDate) return;
+    const transactionID = node.getAttribute('transactionID') || '';
+    if (transactionID) {
+      if (_seenStkTradeIds.has(transactionID)) return; // doublon Trade/TradeConfirm
+      _seenStkTradeIds.add(transactionID);
+    }
+    const buySell = (node.getAttribute('buySell') || '').toUpperCase();
+    const fxRate  = parseFloat(node.getAttribute('fxRateToBase')) || 1;
+    const notes   = (node.getAttribute('notes') || '').split(';').map(s => s.trim());
+    // Base IBKR du lot (attribut cost, négatif sur les ventes) — le VRAI coût utilisé par
+    // le FIFO d'IB, ajusté des primes d'options assignées. Sert au "PRU exact" (la
+    // reconstruction produits−P/L est fausse dès qu'une assignation a déplacé une prime).
+    const costAttr = parseFloat(node.getAttribute('cost'));
+    result.stockTrades.push({
+      ticker,
+      description: node.getAttribute('description') || '',
+      date: tradeDate,
+      time: normTime(node.getAttribute('dateTime') || ''),
+      action: (buySell === 'SELL' || buySell === 'S') ? 'SELL' : 'BUY',
+      qty, // signée (négative = vente)
+      price:    parseFloat(node.getAttribute('tradePrice')) || 0,
+      proceeds: parseFloat(node.getAttribute('proceeds')) || 0, // devise du trade
+      fees: (parseFloat(node.getAttribute('ibCommission') || node.getAttribute('commission')) || 0)
+          + (parseFloat(node.getAttribute('taxes')) || 0),      // devise du trade
+      currency: node.getAttribute('currency') || 'USD',
+      fxRate,
+      realizedPnl:     parseFloat(node.getAttribute('fifoPnlRealized')) || 0, // devise du trade
+      realizedPnlBase: (parseFloat(node.getAttribute('fifoPnlRealized')) || 0) * fxRate,
+      transactionID,
+      ibOrderID: node.getAttribute('ibOrderID') || '', // identique pour les fills d'un même ordre
+      ...(isNaN(costAttr) || costAttr === 0 ? {} : { costBasis: Math.abs(costAttr) }),
+      ...(notes.includes('A') ? { assigned: true } : {}),
+    });
+  });
+
+  // ── V2 : DIVIDENDES + retenues à la source — <CashTransaction type="Dividends"|
+  // "Payment In Lieu Of Dividends"|"Withholding Tax">. Montants en devise du flux
+  // (fxRateToBase exact fourni par IB). Les reversements (montants opposés) se
+  // neutralisent naturellement à l'agrégation par ticker+date.
+  doc.querySelectorAll('CashTransaction').forEach(node => {
+    const type = (node.getAttribute('type') || '').trim();
+    const isDiv = /dividend/i.test(type) && !/accrual/i.test(type);
+    const isTax = /withholding/i.test(type);
+    if (!isDiv && !isTax) return;
+    const amount = parseFloat(node.getAttribute('amount')) || 0;
+    if (!amount) return;
+    const ticker = (node.getAttribute('symbol') || '').trim();
+    const rawDt  = node.getAttribute('dateTime') || node.getAttribute('settleDate') || node.getAttribute('reportDate') || '';
+    const date   = normDate(rawDt.length >= 8 ? rawDt.slice(0, 8) : rawDt);
+    if (!ticker || !date) return;
+    const fxRate = parseFloat(node.getAttribute('fxRateToBase')) || 1;
+    const desc   = node.getAttribute('description') || '';
+    // "USD 0.43 PER SHARE" → montant par action (si présent dans la description)
+    const psMatch = desc.match(/([A-Z]{3})\s+([\d.]+)\s+PER\s+SHARE/i);
+    result.stockDividends.push({
+      ticker, date,
+      kind: isTax ? 'TAX' : 'DIV',
+      amount, // signé, devise du flux (DIV +, TAX −, reversements inversés)
+      currency: node.getAttribute('currency') || 'USD',
+      fxRate,
+      amountBase: amount * fxRate,
+      perShare: psMatch ? parseFloat(psMatch[2]) : 0,
+      description: desc,
+      transactionID: node.getAttribute('transactionID') || '',
     });
   });
 
@@ -5115,6 +5995,64 @@ function ibMergeData(parsed) {
     )) { t.status = 'Closed'; t.assigned = true; }
   });
 
+  // ── V2 : snapshot positions actions/ETF — REPLACE en bloc si l'import est aussi récent
+  // ou plus récent que le snapshot actuel (idempotent sur ré-import ; un vieux relevé
+  // n'écrase jamais un snapshot plus récent). Liste vide acceptée si le XML contient des
+  // données STK (= tout a été vendu) ; une query options-only (hasStockData=false) ne touche à rien.
+  if (parsed.hasStockData) {
+    const asOf = parsed.stockPositionsAsOf || '';
+    const cur  = accountKPI._stockPosAsOf || '';
+    if (!cur || asOf >= cur) {
+      stockPositions.length = 0;
+      (parsed.stockPositions || []).forEach(p => stockPositions.push(p));
+      accountKPI._stockPosAsOf = asOf;
+    }
+  }
+
+  // ── V2 : trades actions — historique CUMULÉ avec dedup :
+  // niveau 1 = transactionID (XML) ; niveau 2 = clé composite ticker|date|heure|qty|prix
+  // (heure sans ':' — le CSV donne "11:46:34", le XML "114634"). Si un import XML retrouve
+  // un trade déjà présent via CSV (sans transactionID), la version XML remplace (fx exact).
+  if (parsed.stockTrades && parsed.stockTrades.length) {
+    const stKey = t => `${t.ticker}|${t.date}|${(t.time||'').replace(/:/g,'')}|${t.qty}|${t.price}`;
+    const byId  = new Map(stockTrades.filter(t => t.transactionID).map(t => [t.transactionID, t]));
+    const byKey = new Map(stockTrades.map(t => [stKey(t), t]));
+    parsed.stockTrades.forEach(t => {
+      if (t.transactionID && byId.has(t.transactionID)) return; // déjà importé (ré-import XML)
+      const ex = byKey.get(stKey(t));
+      if (ex) {
+        // Même trade venu d'une autre source : upgrade CSV→XML (transactionID + fx exact), sinon skip
+        if (t.transactionID && !ex.transactionID) Object.assign(ex, t);
+        return;
+      }
+      stockTrades.push(t);
+      if (t.transactionID) byId.set(t.transactionID, t);
+      byKey.set(stKey(t), t);
+    });
+    stockTrades.sort((a, b) => (a.date + (a.time||'')).localeCompare(b.date + (b.time||'')));
+  }
+
+  // ── V2 : dividendes — même stratégie de dedup que les trades actions :
+  // transactionID (XML) puis clé composite ticker|date|kind|montant (CSV) ;
+  // upgrade CSV→XML quand l'import XML retrouve un flux déjà présent via CSV.
+  if (parsed.stockDividends && parsed.stockDividends.length) {
+    const dvKey = d => `${d.ticker}|${d.date}|${d.kind}|${d.amount}`;
+    const byId  = new Map(stockDividends.filter(d => d.transactionID).map(d => [d.transactionID, d]));
+    const byKey = new Map(stockDividends.map(d => [dvKey(d), d]));
+    parsed.stockDividends.forEach(d => {
+      if (d.transactionID && byId.has(d.transactionID)) return;
+      const ex = byKey.get(dvKey(d));
+      if (ex) {
+        if (d.transactionID && !ex.transactionID) Object.assign(ex, d);
+        return;
+      }
+      stockDividends.push(d);
+      if (d.transactionID) byId.set(d.transactionID, d);
+      byKey.set(dvKey(d), d);
+    });
+    stockDividends.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   if (parsed.accountId) accountKPI._accountId = parsed.accountId;
   if (parsed.accountName) accountKPI._accountName = parsed.accountName;
   if (parsed.baseCurrency) { accountKPI._baseCurrency = parsed.baseCurrency; BASE_CCY = parsed.baseCurrency; }
@@ -5218,6 +6156,9 @@ async function ibSync() {
     if (parsed.accountId) ibLog(`👤 Compte : ${parsed.accountId}`, 'info');
     ibLog(`📊 ${parsed.trades.length} trade(s) d'options détecté(s)`, 'info');
     if (parsed.openPositions.length) ibLog(`📂 ${parsed.openPositions.length} position(s) ouverte(s)`, 'info');
+    if (parsed.stockPositions?.length) ibLog(`📈 ${parsed.stockPositions.length} position(s) actions/ETF`, 'info');
+    if (parsed.stockTrades?.length) ibLog(`🏷️ ${parsed.stockTrades.length} trade(s) actions/ETF (dont ${parsed.stockTrades.filter(t=>t.realizedPnl).length} avec P&L réalisé)`, 'info');
+    if (parsed.stockDividends?.length) ibLog(`💵 ${parsed.stockDividends.filter(d=>d.kind==='DIV').length} dividende(s) + ${parsed.stockDividends.filter(d=>d.kind==='TAX').length} retenue(s) à la source`, 'info');
     if (parsed.nav) ibLog(`💰 NAV : ${fmt(parsed.nav)}`, 'info');
     if (parsed.deposits > 0) ibLog(`🏦 Dépôts détectés : ${fmt(parsed.deposits)}`, 'info');
     // Always log interest status — even if 0, so user knows why it's missing
@@ -5243,7 +6184,7 @@ async function ibSync() {
     ibLog(`✅ ${merge.added} nouveau(x) trade(s) ajouté(s) · ${merge.skipped} doublon(s) ignoré(s)`, 'ok');
     if (merge.depositsTotal > 0) ibLog(`✅ Dépôts mis à jour : ${fmt(merge.depositsTotal)}`, 'ok');
     if (merge.interestTotal !== 0) ibLog(`✅ Intérêts mis à jour : ${fmt(merge.interestTotal)}`, 'ok');
-    if (Object.keys(merge.kpiUpdates).length > 0) ibLog(`✅ Dashboard KPIs mis à jour automatiquement`, 'ok');
+    if (Object.keys(merge.kpiUpdates).length > 0) ibLog(`✅ KPIs du tableau de bord mis à jour automatiquement`, 'ok');
 
     // Save sync timestamp
     const now = new Date().toISOString();
@@ -5343,7 +6284,7 @@ function renderIBConnect() {
           <div class="section-header" style="margin-bottom:16px">
             <div>
               <div class="section-title">Credentials Flex Query</div>
-              <div class="section-sub">Stockés localement dans votre navigateur · jamais envoyés à un serveur tiers</div>
+              <div class="section-sub">Stockés uniquement dans votre navigateur · transmis à IBKR via notre proxy sécurisé, jamais à un service tiers</div>
             </div>
             ${isConnected ? `<span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);font-weight:500"><span class="ib-status-dot connected"></span>Connecté</span>` : ''}
           </div>
@@ -5468,7 +6409,7 @@ function renderIBConnect() {
               </div>
             </div>`).join('')}
           <div style="margin-top:10px;padding:10px 14px;background:rgba(46,160,67,0.07);border:1px solid rgba(46,160,67,0.2);border-radius:8px;font-size:12px;color:var(--text-muted)">
-            🔒 <strong style="color:var(--text)">Sécurité</strong> : Token et Query ID stockés uniquement dans votre navigateur. Les appels sont envoyés directement aux serveurs IB via un proxy CORS. Accès en lecture seule — impossible de passer des ordres.
+            🔒 <strong style="color:var(--text)">Sécurité</strong> : Token et Query ID stockés uniquement dans votre navigateur. La synchronisation passe par notre proxy sécurisé (olt-tracker.app), qui relaie l'appel aux serveurs IBKR — le token n'est jamais transmis à un service tiers. Accès en lecture seule — impossible de passer des ordres ni de retirer des fonds.
           </div>
           <div style="margin-top:8px;padding:10px 14px;background:rgba(240,136,62,0.07);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-size:12px;color:var(--text-muted)">
             📅 <strong style="color:var(--text)">Chaque 1er janvier</strong> : importez le CSV de l'année écoulée via l'onglet <strong style="color:var(--text)">Import CSV / XML</strong>, puis re-synchronisez la Flex Query sur "Depuis le début de l'année" pour la nouvelle année.
@@ -5766,8 +6707,13 @@ function ibParseCSV(csvText) {
     trades: [], openPositions: [],
     nav: null, cash: null, accountId: null, errors: [],
     deposits: 0, withdrawals: 0, interest: 0, commissions: 0, transfers: 0,
+    depositsByMonth: {}, // { 'YYYY-MM': montant base } — ventilation mensuelle des dépôts/retraits
     cashTxDetails: [],
     strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) : {ticker,type,expiry,oldStrike,newStrike}
+    stockPositions: [], stockPositionsAsOf: '', // V2 — snapshot actions/ETF (section "Positions ouvertes")
+    stockTrades: [], // V2 — trades actions avec P/L réalisé
+    stockDividends: [], // V2 — dividendes (DIV) et retenues à la source (TAX)
+    hasStockData: false, // true si le CSV contient des lignes Actions (trades ou positions)
   };
 
   // Parse CSV line respecting quoted fields
@@ -5830,6 +6776,28 @@ function ibParseCSV(csvText) {
       sections[section].rows.push(fields.slice(2));
     }
   });
+
+  // ── V2 : date de FIN de période du relevé (sert de reportDate/asOf aux positions actions,
+  // le CSV n'ayant pas de reportDate par ligne). Formats gérés : ISO, français, anglais.
+  let csvPeriodEnd = '';
+  {
+    const periodLine = lines.find(l => /^(Déclaration|Statement),Data,(Period|Période)/i.test(l));
+    const val = periodLine ? (parseLine(periodLine)[3] || '') : '';
+    const frMonths = {janvier:'01',février:'02',fevrier:'02',mars:'03',avril:'04',mai:'05',juin:'06',juillet:'07',août:'08',aout:'08',septembre:'09',octobre:'10',novembre:'11',décembre:'12',decembre:'12'};
+    const enMonths = {january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+    let m, last = '';
+    const isoRe = /(\d{4})-(\d{2})-(\d{2})/g;
+    while ((m = isoRe.exec(val))) last = `${m[1]}-${m[2]}-${m[3]}`;
+    if (!last) {
+      const frRe = new RegExp(`(\\d{1,2})\\s+(${Object.keys(frMonths).join('|')})\\s+(\\d{4})`, 'gi');
+      while ((m = frRe.exec(val))) last = `${m[3]}-${frMonths[m[2].toLowerCase()]}-${m[1].padStart(2,'0')}`;
+    }
+    if (!last) {
+      const enRe = new RegExp(`(${Object.keys(enMonths).join('|')})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'gi');
+      while ((m = enRe.exec(val))) last = `${m[3]}-${enMonths[m[1].toLowerCase()]}-${m[2].padStart(2,'0')}`;
+    }
+    csvPeriodEnd = last;
+  }
 
   // ── Build symbol → multiplier map from "Informations instrument financier"
   // Header: Catégorie,Symbole,Description,Conid,ID Titre,Underlying,Liste des Bourses,Multiplicateur,...
@@ -5963,12 +6931,54 @@ function ibParseCSV(csvText) {
     const iProc  = _ci(/produit|proceeds/, 8);
     const iComm  = _ci(/comm/, 9);
     const iCode  = _ci(/^code$/, 13);
+    const iRealz = _ci(/r[ée]alis|realized/, 10); // colonne "P/L réalisé" / "Realized P/L"
+    const iBasis = _ci(/^base$|^basis$/, -1);     // colonne "Base" — coût IBKR du lot (PRU exact)
 
     txLines.forEach(line => {
       const f = parseLine(line).slice(2); // skip "Transactions,Data,"
 
       const categ   = f[iCateg] || '';
-      if (!categ.toLowerCase().includes('option')) return;
+      const catLow  = categ.trim().toLowerCase();
+
+      // ── V2 : trades ACTIONS/ETF (P&L réalisé). Catégorie "Actions"/"Stocks".
+      // NB : la catégorie options FR ("Options sur actions et indices") contient aussi
+      // "actions" → le test d'exclusion 'option' passe en premier.
+      if (!catLow.includes('option') && /^(actions?|stocks?)\b/.test(catLow)) {
+        const currency = f[iCcy] || 'USD';
+        const symbol   = (f[iSym] || '').trim();
+        const { date, time } = parseDateTime(f[iDate] || '');
+        const qty      = parseFloat((f[iQty]   || '0').replace(/,/g,'')) || 0;
+        const price    = parseFloat((f[iPrice] || '0').replace(/,/g,'')) || 0;
+        const proceeds = parseFloat((f[iProc]  || '0').replace(/,/g,'')) || 0;
+        const fees     = parseFloat((f[iComm]  || '0').replace(/,/g,'')) || 0;
+        const realized = parseFloat((f[iRealz] || '0').replace(/,/g,'')) || 0;
+        const code     = f[iCode] || '';
+        if (!symbol || !date || !qty) return;
+        const fxRate = getFxRate(currency, date); // CSV : pas de fxRateToBase → table BCE/Forex
+        // Base IBKR du lot (signée : négative sur les ventes) → PRU exact
+        const basisRaw = iBasis >= 0 ? parseFloat((f[iBasis] || '').replace(/,/g,'')) : NaN;
+        result.stockTrades.push({
+          ticker: symbol,
+          description: '',
+          date, time,
+          action: qty < 0 ? 'SELL' : 'BUY',
+          qty,
+          price,
+          proceeds,
+          fees,
+          currency,
+          fxRate,
+          realizedPnl:     realized,
+          realizedPnlBase: realized * fxRate,
+          transactionID: '', // absent du CSV → dedup par clé composite au merge
+          ...(isNaN(basisRaw) || basisRaw === 0 ? {} : { costBasis: Math.abs(basisRaw) }),
+          ...(code.split(';').map(s => s.trim()).includes('A') ? { assigned: true } : {}),
+        });
+        result.hasStockData = true;
+        return;
+      }
+
+      if (!catLow.includes('option')) return;
 
       const currency = f[iCcy] || 'USD';
       const symbol   = f[iSym] || '';
@@ -6039,15 +7049,61 @@ function ibParseCSV(csvText) {
   }
 
   // ── Open Positions
-  const posLines = lines.filter(l => l.startsWith('Positions ouvertes,Data,Summary,'));
+  // Colonnes de la section localisées par NOM (les relevés 2021 ont une colonne "Compte"
+  // en plus → indices décalés). Repli sur les indices historiques.
+  const posHdr = (sections['Positions ouvertes'] || sections['Open Positions'] || {}).headers || [];
+  const _pi = (re, fb) => { const i = posHdr.findIndex(h => re.test(h.trim().toLowerCase())); return i >= 0 ? i : fb; };
+  const pCateg = _pi(/cat[ée]gorie|category/, 1);
+  const pCcy   = _pi(/devise|currency/, 2);
+  const pSym   = _pi(/symbole|symbol/, 3);
+  const pQty   = _pi(/quantit/, 4);
+  const pCostP = _pi(/prix de revient|cost price/, 6);
+  const pBasis = _pi(/base|cost basis/, 7);
+  const pClose = _pi(/fermeture|cl[ôo]ture|close/, 8);
+  const pVal   = _pi(/^valeur$|^value$/, 9);
+  const pUnrl  = _pi(/latent|unrealized/, 10);
+  const posLines = lines.filter(l => l.startsWith('Positions ouvertes,Data,Summary,') || l.startsWith('Open Positions,Data,Summary,'));
   posLines.forEach(line => {
     const f = parseLine(line).slice(2); // skip section,rowtype
     // f: Summary,Catégorie,Devise,Symbole,Quantité,Mult,Coût,...
-    const categ   = f[1] || '';
-    if (!categ.toLowerCase().includes('option')) return;
-    const currency = f[2] || 'USD';
-    const symbol   = f[3] || '';
-    const qty      = parseFloat((f[4] || '0').replace(/,/g,'')) || 0;
+    const categ  = f[pCateg] || '';
+    const catLow = categ.trim().toLowerCase();
+
+    // ── V2 : positions ACTIONS/ETF (catégorie "Actions"/"Stocks")
+    if (!catLow.includes('option') && /^(actions?|stocks?)\b/.test(catLow)) {
+      const currency = f[pCcy] || 'USD';
+      const ticker   = (f[pSym] || '').trim();
+      const qty      = parseFloat((f[pQty]   || '0').replace(/,/g,'')) || 0;
+      if (!ticker || !qty) return;
+      const costP  = parseFloat((f[pCostP] || '0').replace(/,/g,'')) || 0;
+      const basis  = parseFloat((f[pBasis] || '0').replace(/,/g,'')) || 0;
+      const close  = parseFloat((f[pClose] || '0').replace(/,/g,'')) || 0;
+      const value  = parseFloat((f[pVal]   || '0').replace(/,/g,'')) || 0;
+      const unreal = parseFloat((f[pUnrl]  || '0').replace(/,/g,'')) || 0;
+      result.stockPositions.push({
+        ticker,
+        description: '',
+        subCategory: '', // non fourni par le CSV
+        qty,
+        currency,
+        fxRateToBase: getFxRate(currency, csvPeriodEnd || new Date().toISOString().slice(0,10)),
+        markPrice:      close,
+        costBasisPrice: costP,
+        costBasisMoney: basis,
+        positionValue:  value,
+        fifoPnlUnrealized: unreal,
+        percentOfNAV: 0,
+        listingExchange: '', isin: '',
+        reportDate: csvPeriodEnd || '',
+      });
+      result.hasStockData = true;
+      return;
+    }
+
+    if (!catLow.includes('option')) return;
+    const currency = f[pCcy] || 'USD';
+    const symbol   = f[pSym] || '';
+    const qty      = parseFloat((f[pQty] || '0').replace(/,/g,'')) || 0;
     const parsed   = parseSymbol(symbol);
     if (!parsed) return;
     result.openPositions.push({
@@ -6058,6 +7114,50 @@ function ibParseCSV(csvText) {
       qty:      Math.abs(qty),
       action:   qty < 0 ? 'SELL' : 'BUY',
       currency,
+    });
+  });
+  result.stockPositionsAsOf = result.stockPositions.length ? (csvPeriodEnd || '') : result.stockPositionsAsOf;
+
+  // ── V2 : DIVIDENDES + retenues à la source. Les noms de sections sont détectés par
+  // REGEX sur les sections réellement présentes dans le fichier — les intitulés varient
+  // (« Retenue d'impôts » avec apostrophe droite OU typographique, « Withholding Tax »,
+  // « Retenues fiscales »…). DIV = section nommée exactement Dividendes/Dividends (pour ne
+  // pas attraper « Modifications des cumuls de dividendes »/accruals). Colonnes par NOM
+  // (colonne "Compte" possible sur les relevés 2021). Ticker extrait de la description.
+  const _dvPairs = [];
+  Object.keys(sections).forEach(name => {
+    const n = name.trim().toLowerCase();
+    if (/^(dividendes|dividends)$/.test(n)) _dvPairs.push([name, 'DIV']);
+    else if (/retenue|withholding/.test(n)) _dvPairs.push([name, 'TAX']);
+  });
+  _dvPairs.forEach(([secName, kind]) => {
+    const hdr = (sections[secName] || {}).headers || [];
+    const _di = (re, fb) => { const i = hdr.findIndex(h => re.test(h.trim().toLowerCase())); return i >= 0 ? i : fb; };
+    const dCcy  = _di(/devise|currency/, 0);
+    const dDate = _di(/date/, 1);
+    const dDesc = _di(/description/, 2);
+    const dAmt  = _di(/montant|amount/, 3);
+    lines.forEach(line => {
+      if (!line.startsWith(secName + ',Data,')) return;
+      const f = parseLine(line).slice(2);
+      const ccy  = (f[dCcy] || '').trim();
+      const date = (f[dDate] || '').trim().slice(0, 10);
+      if (/^total/i.test(ccy) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; // lignes Total / sous-totaux
+      const desc   = (f[dDesc] || '').trim();
+      const amount = parseFloat((f[dAmt] || '0').replace(/,/g, '')) || 0;
+      if (!amount || !desc) return;
+      const tickMatch = desc.match(/^([A-Z0-9.]+)\s*\(/);
+      if (!tickMatch) return;
+      const psMatch = desc.match(/([A-Z]{3})\s+([\d.]+)\s+(?:PER\s+SHARE|par action)/i);
+      const fxRate = getFxRate(ccy, date);
+      result.stockDividends.push({
+        ticker: tickMatch[1], date, kind,
+        amount, currency: ccy || 'USD', fxRate,
+        amountBase: amount * fxRate,
+        perShare: psMatch ? parseFloat(psMatch[2]) : 0,
+        description: desc,
+        transactionID: '', // absent du CSV → dedup par clé composite au merge
+      });
     });
   });
 
@@ -6128,6 +7228,33 @@ function ibParseCSV(csvText) {
     });
   }
 
+  // ── V2 : ventilation MENSUELLE des dépôts/retraits — section "Dépôts et retraits"
+  // (FR) / "Deposits & Withdrawals" (EN), lignes datées en devise d'origine (souvent EUR)
+  // → converties en base au taux du jour (table BCE). N'affecte PAS result.deposits
+  // (le total annuel de "Changements de l'actif net" reste la source autoritaire) :
+  // alimente uniquement les buckets _depositsM_YYYY-MM via ibMergeData (replace par mois).
+  {
+    const depSecName = Object.keys(sections).find(n => /d[ée]p[ôo]ts et retraits|deposits\s*&\s*withdrawals/i.test(n.trim()));
+    if (depSecName) {
+      const hdr = (sections[depSecName] || {}).headers || [];
+      const _wi = (re, fb) => { const i = hdr.findIndex(h => re.test(h.trim().toLowerCase())); return i >= 0 ? i : fb; };
+      const wCcy  = _wi(/devise|currency/, 0);
+      const wDate = _wi(/date/, 1);
+      const wAmt  = _wi(/montant|amount/, 3);
+      lines.forEach(line => {
+        if (!line.startsWith(depSecName + ',Data,')) return;
+        const f = parseLine(line).slice(2);
+        const ccy  = (f[wCcy] || '').trim();
+        const date = (f[wDate] || '').trim().slice(0, 10);
+        if (/^total/i.test(ccy) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; // lignes Total
+        const amt = parseFloat((f[wAmt] || '0').replace(/,/g, '')) || 0;
+        if (!amt) return;
+        const mo = date.slice(0, 7);
+        result.depositsByMonth[mo] = (result.depositsByMonth[mo] || 0) + amt * getFxRate(ccy, date);
+      });
+    }
+  }
+
   // Fallback from "Rapport trésorerie" (FR) / "Cash Report" (EN)
   if (result.deposits === 0) {
     const trLines = lines.filter(l =>
@@ -6140,8 +7267,9 @@ function ibParseCSV(csvText) {
       if (val > 0) result.deposits += val;
     });
   }
-  // NB : CSV (années précédentes) → on garde uniquement le total ANNUEL (_deposits_YYYY).
-  // Seul le XML YTD de l'année en cours alimente les buckets mensuels (_depositsM_YYYY-MM).
+  // NB : le total ANNUEL (_deposits_YYYY) vient de "Changements de l'actif net" (autoritaire) ;
+  // la ventilation MENSUELLE (_depositsM_YYYY-MM) vient de la section "Dépôts et retraits"
+  // datée (bloc V2 ci-dessus) — comme le XML via StatementOfFundsLine.
 
   // ── Reconcile trade status against actual open positions
   // SELL trades not in openPositions list → mark Closed or Expired based on expiry date
@@ -6201,6 +7329,9 @@ async function xmlParseFile() {
 
     xmlShowLog(`📊 ${parsed.trades.length} trade(s) d'options détecté(s)`, 'info');
     if (parsed.openPositions.length) xmlShowLog(`📂 ${parsed.openPositions.length} position(s) ouverte(s)`, 'info');
+    if (parsed.stockPositions?.length) xmlShowLog(`📈 ${parsed.stockPositions.length} position(s) actions/ETF`, 'info');
+    if (parsed.stockTrades?.length) xmlShowLog(`🏷️ ${parsed.stockTrades.length} trade(s) actions/ETF (dont ${parsed.stockTrades.filter(t=>t.realizedPnl).length} avec P&L réalisé)`, 'info');
+    if (parsed.stockDividends?.length) xmlShowLog(`💵 ${parsed.stockDividends.filter(d=>d.kind==='DIV').length} dividende(s) + ${parsed.stockDividends.filter(d=>d.kind==='TAX').length} retenue(s) à la source`, 'info');
     if (parsed.nav) xmlShowLog(`💰 NAV : ${fmt(parsed.nav)}`, 'info');
     if (parsed.deposits > 0) xmlShowLog(`🏦 Dépôts : ${fmt(parsed.deposits)}`, 'info');
     if (parsed.interest !== 0) xmlShowLog(`📈 Intérêts : ${fmt(parsed.interest)}`, 'info');
@@ -6282,7 +7413,7 @@ function xmlApplyData() {
   xmlShowLog(`✅ ${merge.added} trade(s) ajouté(s) · ${merge.skipped} doublon(s) ignoré(s)`, 'ok');
   if (merge.depositsTotal > 0) xmlShowLog(`✅ Dépôts mis à jour : ${fmt(merge.depositsTotal)}`, 'ok');
   if (merge.interestTotal !== 0) xmlShowLog(`✅ Intérêts mis à jour : ${fmt(merge.interestTotal)}`, 'ok');
-  xmlShowLog(`🎉 Import terminé ! Dashboard mis à jour.`, 'ok');
+  xmlShowLog(`🎉 Import terminé ! Tableau de bord mis à jour.`, 'ok');
   xmlPendingData = null;
   document.getElementById('xml-preview-section').style.display = 'none';
 }
@@ -6416,6 +7547,11 @@ function _doResetAllData() {
   // Clear transactions
   transactions.length = 0;
 
+  // V2 — clear stock/ETF snapshot + historiques trades actions et dividendes
+  stockPositions.length = 0;
+  stockTrades.length = 0;
+  stockDividends.length = 0;
+
   // Reset accountKPI
   Object.keys(accountKPI).forEach(k => { delete accountKPI[k]; });
   accountKPI.navStart    = 0;
@@ -6536,8 +7672,6 @@ async function ibAutoSync() {
   const themeBtn = document.getElementById('theme-toggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
   // Modals
-  const closeModalBtn = document.getElementById('close-modal-btn');
-  if (closeModalBtn) closeModalBtn.addEventListener('click', () => document.getElementById('stock-modal').classList.remove('open'));
   const closeAdd = document.getElementById('close-add-modal-btn');
   if (closeAdd) closeAdd.addEventListener('click', closeAddModal);
   const cancelAdd = document.getElementById('cancel-add-btn');
@@ -6546,8 +7680,6 @@ async function ibAutoSync() {
   if (confirmAdd) confirmAdd.addEventListener('click', addTransaction);
   const openAdd = document.getElementById('open-add-btn');
   if (openAdd) openAdd.addEventListener('click', () => document.getElementById('add-modal').classList.add('open'));
-  const stockModal = document.getElementById('stock-modal');
-  if (stockModal) stockModal.addEventListener('click', e=>{ if(e.target===e.currentTarget) closeModal(); });
   const addModal = document.getElementById('add-modal');
   if (addModal) addModal.addEventListener('click', e=>{ if(e.target===e.currentTarget) closeAddModal(); });
 
