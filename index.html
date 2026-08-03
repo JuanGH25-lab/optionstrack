@@ -4196,7 +4196,9 @@ function renderPositions() {
   // Rename _fills to _trades for backward compat
   openGrouped.forEach(g => { g._trades = g._fills; });
 
-  const totalCollateral = openGrouped.filter(t=>t.type==='P').reduce((s,t)=>s+toBaseToday(t.strike*t.qty*getMultiplier(t), t.currency),0);
+  // Collatéral : seuls les PUT VENDUS immobilisent du cash (obligation d'achat si assigné).
+  // Un PUT acheté est un droit, pas une obligation — il ne requiert aucun collatéral.
+  const totalCollateral = openGrouped.filter(t=>t.type==='P' && t.action==='SELL').reduce((s,t)=>s+toBaseToday(t.strike*t.qty*getMultiplier(t), t.currency),0);
   const totalPremOpen = open.reduce((s,t)=>s+txNet(t), 0);
   const cashAvailable = accountKPI.cashUSD;
   const utilizationPct = cashAvailable > 0 ? (totalCollateral / cashAvailable * 100) : 0;
@@ -4227,6 +4229,9 @@ function renderPositions() {
   const watchPositions = openGrouped.filter(t => {
     const price = livePrices[t.ticker];
     if (!price) return false;
+    // Seules les positions VENDUES présentent un risque d'assignation : sur un achat,
+    // la perte maximale est la prime déjà payée, il n'y a rien à « surveiller » ici.
+    if (t.action !== 'SELL') return false;
     if (t.type === 'P') return (price - t.strike) / t.strike < 0.10;
     if (t.type === 'C') return (t.strike - price) / t.strike < 0.10;
     return false;
@@ -4388,16 +4393,18 @@ function renderPositions() {
             ? `<td class="mono" style="color:var(--text)">${currSym}${price.toFixed(2)}</td>`
             : `<td class="mono neu" id="price-${t.ticker}">…</td>`;
           let distHtml = `<td class="mono neu">—</td>`;
-          if (price && t.type === 'P') {
-            const dist = ((price - t.strike) / t.strike) * 100;
-            const dc = dist < 0 ? 'var(--red)' : dist < 10 ? 'var(--orange)' : 'var(--green)';
-            const arrow = dist < 0 ? '▼' : '▲';
-            distHtml = `<td class="mono" style="color:${dc};font-weight:600">${arrow} ${Math.abs(dist).toFixed(1)}%</td>`;
-          } else if (price && t.type === 'C') {
-            const dist = ((t.strike - price) / t.strike) * 100;
-            const dc = dist < 0 ? 'var(--red)' : dist < 10 ? 'var(--orange)' : 'var(--green)';
-            const arrow = dist < 0 ? '▼' : '▲';
-            distHtml = `<td class="mono" style="color:${dc};font-weight:600">${arrow} ${Math.abs(dist).toFixed(1)}%</td>`;
+          if (price && (t.type === 'P' || t.type === 'C')) {
+            // Distance au strike, exprimée hors de la monnaie : > 0 = OTM, < 0 = ITM.
+            const otm = t.type === 'P'
+              ? ((price - t.strike) / t.strike) * 100
+              : ((t.strike - price) / t.strike) * 100;
+            // Le sens favorable dépend de l'action : le VENDEUR veut rester OTM (l'option expire
+            // sans valeur), l'ACHETEUR veut être ITM (l'option prend de la valeur). On inverse
+            // donc la couleur et la flèche sur les positions achetées.
+            const fav = t.action === 'BUY' ? -otm : otm;
+            const dc = fav < 0 ? 'var(--red)' : fav < 10 ? 'var(--orange)' : 'var(--green)';
+            const arrow = fav < 0 ? '▼' : '▲';
+            distHtml = `<td class="mono" style="color:${dc};font-weight:600">${arrow} ${Math.abs(otm).toFixed(1)}%</td>`;
           }
           const ptAction = t.action==='SELL'?['rgba(248,81,73,0.15)','#f85149']:['rgba(46,160,67,0.15)','#2ea043'];
           const ptType   = t.type==='C'?['rgba(0,229,204,0.12)','#00e5cc']:['rgba(248,81,73,0.15)','#f85149'];
