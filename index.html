@@ -3057,7 +3057,11 @@ function renderMonthlyReport(months) {
   if (!container) return;
 
   const txs   = groupedTransactions();
-  const allMonths = months || [...new Set(txs.map(t => t.date.slice(0,7)))].sort();
+  const dataMonths = months || [...new Set(txs.map(t => t.date.slice(0,7)))].sort();
+  // Le mois courant doit toujours être sélectionnable, même sans transaction
+  // (début de mois : le rapport s'affiche alors à zéro plutôt que d'être introuvable).
+  const curMonth = new Date().toISOString().slice(0,7);
+  const allMonths = [...new Set([...dataMonths, curMonth])].sort();
   const monthsDesc = [...allMonths].reverse(); // recent first
 
   const monthLabel = m => {
@@ -3071,9 +3075,10 @@ function renderMonthlyReport(months) {
     return names[parseInt(mo)-1] + ' ' + y.slice(2);
   };
 
-  // Default to most recent month
+  // Default to most recent month WITH data (le mois courant reste sélectionnable
+  // via le menu, mais on n'ouvre pas le rapport sur un mois vide).
   if (!monthlyReportMonth || !allMonths.includes(monthlyReportMonth)) {
-    monthlyReportMonth = monthsDesc[0];
+    monthlyReportMonth = dataMonths.length ? dataMonths[dataMonths.length-1] : monthsDesc[0];
   }
   const m = monthlyReportMonth;
   if (!m) { container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--c-muted)">Aucune donnée disponible</div>'; return; }
