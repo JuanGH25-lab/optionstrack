@@ -1109,8 +1109,10 @@ function buildChart(tf) {
           callbacks: {
             label: c => {
               if (c.parsed.y === 0 && c.dataset.type === 'bar') return null;
-              const colors = ['#00e5cc', '#2ecc71', '#f0c27f'];
-              return ` ${c.dataset.label}: ${fmtK(c.parsed.y)}`;
+              // Montant EXACT : fmtK arrondit au millier (47.44 € s'affichait « €0.0k »,
+              // ce qui laissait croire que la source n'était pas comptée). L'échelle en k
+              // reste sur les axes, où elle a du sens.
+              return ` ${c.dataset.label}: ${fmt(c.parsed.y)}`;
             }
           }
         }
@@ -2420,7 +2422,12 @@ function editMonthlyCapital(mKey) {
   const apply = () => {
     const v = parseFloat(input.value);
     input.remove(); capEl.style.display = '';
-    const useComputed = isNaN(v) || v <= 0;
+    // Un simple clic suivi d'un clic ailleurs déclenche `blur` sans que rien n'ait été
+    // saisi : l'input est pré-rempli avec la valeur calculée, donc on enregistrait un
+    // override égal au calcul. Le mois basculait en « Capital personnalisé » et se figeait
+    // — il n'était plus recalculé aux imports suivants. Une valeur identique au calcul
+    // (à 0,01 près) n'est donc PAS un override.
+    const useComputed = isNaN(v) || v <= 0 || Math.abs(v - computed) < 0.005;
     const effective = useComputed ? computed : v;
     if (useComputed) {
       localStorage.removeItem('olt_cap_override_' + mKey);
@@ -3207,7 +3214,7 @@ function renderMonthlyReport(months) {
               ${effectiveCapital > 0 ? fmt(effectiveCapital) : '—'}
               <span style="font-size:10px;color:var(--c-muted);font-weight:400">✏</span>
             </div>
-            <div id="mcap-sub-${mKey}" style="font-size:10px;color:${isCustomCapital?'#00e5cc':'var(--c-dim)'};margin-top:3px">${isCustomCapital ? '✏ Capital personnalisé' : 'au 1er ' + monthLabel(m)}</div>
+            <div id="mcap-sub-${mKey}" style="font-size:10px;color:${isCustomCapital?'#00e5cc':'var(--c-dim)'};margin-top:3px"${isCustomCapital ? ` title="Valeur saisie manuellement, figée : elle n'est plus recalculée aux imports suivants. Calcul automatique pour ce mois : ${fmt(capitalAtMonthStart)}. Pour revenir au calcul auto, cliquez sur le montant, videz le champ et validez."` : ''}>${isCustomCapital ? '✏ Capital personnalisé' : 'au 1er ' + monthLabel(m)}</div>
           </div>
           <div style="padding:16px 20px;border-right:1px solid var(--card-border)">
             <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Rendement mensuel<br><span style="font-size:10px;font-weight:400;opacity:0.8">(${inclDiv ? 'primes + dividendes' : 'primes nettes'} / capital)</span></div>
@@ -5495,9 +5502,20 @@ function ibParseXML(xmlText) {
     const buySell = (node.getAttribute('buySell') || '').toUpperCase();
     const fxRate  = parseFloat(node.getAttribute('fxRateToBase')) || 1;
     const notes   = (node.getAttribute('notes') || '').split(';').map(s => s.trim());
-    // Base IBKR du lot (attribut cost, négatif sur les ventes) — le VRAI coût utilisé par
-    // le FIFO d'IB, ajusté des primes d'options assignées. Sert au "PRU exact" (la
-    // reconstruction produits−P/L est fausse dès qu'une assignation a déplacé une prime).
+    // Attribut `cost` = base du lot selon IBKR (négatif sur les ventes). ATTENTION : son
+    // sens diffère selon le sens du trade, et toute la méthode économique en dépend.
+    //
+    //  • ACHAT  → coût BRUT du lot : tradePrice × qté + frais. Les primes d'options
+    //    assignées n'y sont PAS déduites. C'est ce que somme computeStockEconPnl pour
+    //    reconstruire le coût d'achat réel (convention OLT).
+    //  • VENTE  → base FIFO du lot cédé, telle qu'ajustée par IBKR : la prime du put
+    //    assigné à l'achat A été retranchée. Sert au « PRU exact » du P&L réalisé.
+    //
+    // IBKR applique donc son ajustement au niveau de la POSITION (visible sur la jambe de
+    // vente et dans costBasisPrice des positions ouvertes), jamais sur la ligne d'achat.
+    // Vérifié sur SNAP : 24 puts 5.50 vendus 2 112 $ le 2026-03-13 → 88 $/contrat, net de
+    // commission 87.40 $. Un contrat assigné le 2026-04-07 → ligne d'achat cost = 550.00
+    // (= 5.50 × 100, brut) ; revente du lot le 2026-05-08 → cost = 462.60, soit 550 − 87.40.
     const costAttr = parseFloat(node.getAttribute('cost'));
     result.stockTrades.push({
       ticker,
