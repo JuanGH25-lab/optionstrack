@@ -611,6 +611,12 @@ let stockTrades = [];
 // kind 'DIV' (versement brut, montant +) ou 'TAX' (retenue à la source, montant −),
 // appariés à l'affichage par ticker+date pour donner brut / retenue / net.
 let stockDividends = [];
+// V2 : TRANSFERTS de titres (section "Transferts" du CSV / <Transfer> du XML).
+// { ticker, date, qty (signée : <0 sortant, >0 entrant), currency, transactionID }
+// Indispensable au PRU : sans eux, des titres sortis du compte restent comptés comme
+// détenus, la quantité reconstruite ne colle plus au relevé et tout le ticker bascule
+// sur le PRU IBKR (voir computeStockEconPnl / stockEconPru).
+let stockTransfers = [];
 // V2 : coût ÉCONOMIQUE résiduel de la position ouverte par ticker (rempli par
 // computeStockEconPnl). { qty, cost, ok } — cost = coût d'achat RÉEL des titres encore
 // détenus (assignation = strike×qté, primes NON déduites, contrairement au costBasisPrice
@@ -3483,18 +3489,46 @@ function tickerNetPremiumOrig(ticker, ccy) {
 // Annote chaque VENTE de stockTrades : _econCost (coût du lot au PRU moyen), _econPnl
 // (devise du trade), _econPnlBase, _econOk. Historique d'achat incomplet → _econOk=false
 // (repli IBKR) jusqu'au retour à plat de la position.
+// Les TRANSFERTS de titres sont rejoués avec les trades : un sortant retire des titres au
+// coût moyen courant (PRU des restants inchangé), un entrant rend la base inconnaissable
+// (aucun prix d'origine fourni) et force le repli IBKR.
 function computeStockEconPnl() {
   stockEconBasis = {};
   const byTicker = {};
-  [...stockTrades]
-    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
-    .forEach(t => {
-      const k = normTicker(t.ticker);
-      (byTicker[k] = byTicker[k] || []).push(t);
+  // Trades ET transferts sont rejoués dans l'ordre chronologique : un transfert n'est ni
+  // un achat ni une vente, mais il fait bouger la quantité détenue, donc il doit être
+  // intercalé au bon moment dans le cycle de vie de la position.
+  [...stockTrades.map(t => ({ kind: 'trade', t, date: t.date, time: t.time || '' })),
+   ...stockTransfers.map(r => ({ kind: 'transfer', r, date: r.date, time: '' }))]
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+    .forEach(ev => {
+      const k = normTicker(ev.kind === 'trade' ? ev.t.ticker : ev.r.ticker);
+      (byTicker[k] = byTicker[k] || []).push(ev);
     });
   Object.entries(byTicker).forEach(([tkKey, list]) => {
     let qty = 0, totalCost = 0, unknown = false; // position courante au coût moyen pondéré
-    list.forEach(t => {
+    list.forEach(ev => {
+      // ── Transfert de titres : déplacement entre comptes, sans P&L ni prix d'achat
+      if (ev.kind === 'transfer') {
+        const trQty = ev.r.qty;
+        if (trQty < 0) {
+          // SORTANT : on retire les titres AU COÛT MOYEN COURANT — le PRU des titres
+          // restants est donc inchangé, et la quantité reconstruite recolle au relevé.
+          const outQty = -trQty;
+          if (outQty > qty + 1e-9) unknown = true; // sortie > position connue → historique incomplet
+          const take = Math.min(outQty, qty);
+          if (qty > 0) totalCost -= (totalCost / qty) * take;
+          qty -= take;
+          if (qty <= 1e-9) { qty = 0; totalCost = 0; unknown = false; } // position soldée → repart propre
+        } else if (trQty > 0) {
+          // ENTRANT : IBKR ne fournit aucun prix de revient d'origine (les titres viennent
+          // d'ailleurs). Le coût d'achat réel est donc inconnaissable → repli IBKR assumé.
+          qty += trQty;
+          unknown = true;
+        }
+        return;
+      }
+      const t = ev.t;
       delete t._econCost; delete t._econPnl; delete t._econPnlBase;
       t._econOk = false;
       if (t.qty > 0) {
@@ -5009,6 +5043,7 @@ function saveAppData() {
       // V2 — historique trades actions, SANS les champs dérivés _econ* (recalculés au rendu)
       stockTrades:    stockTrades.map(t => { const { _econCost, _econPnl, _econPnlBase, _econOk, ...rest } = t; return rest; }),
       stockDividends: stockDividends, // V2 — historique dividendes (+ retenues)
+      stockTransfers: stockTransfers, // V2 — transferts de titres (indispensable au PRU)
       savedAt:       new Date().toISOString(),
     };
     const json = JSON.stringify(payload);
@@ -5027,7 +5062,7 @@ function saveAppData() {
           multiplier: t.multiplier, transactionID: t.transactionID, ibOrderID: t.ibOrderID,
           assigned: t.assigned, exercised: t.exercised,
         }));
-        const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, stockPositions, stockTrades, stockDividends, savedAt: new Date().toISOString(), slim: true };
+        const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, stockPositions, stockTrades, stockDividends, stockTransfers, savedAt: new Date().toISOString(), slim: true };
         localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(payload2));
         console.log('[OLT Tracker] saveAppData slim OK');
       } catch(e2) {
@@ -5084,6 +5119,10 @@ function loadAppData() {
     if (Array.isArray(payload.stockDividends)) {
       stockDividends.length = 0;
       payload.stockDividends.forEach(d => stockDividends.push(d));
+    }
+    if (Array.isArray(payload.stockTransfers)) {
+      stockTransfers.length = 0;
+      payload.stockTransfers.forEach(t => stockTransfers.push(t));
     }
     // Migration: fix SELL trades incorrectly marked 'Expired' when actually assigned
     transactions.forEach(t => {
@@ -5293,6 +5332,7 @@ function ibParseXML(xmlText) {
     stockPositions: [], stockPositionsAsOf: '', // V2 — snapshot actions/ETF
     stockTrades: [], // V2 — trades actions (P&L réalisé via fifoPnlRealized)
     stockDividends: [], // V2 — dividendes (DIV) et retenues à la source (TAX)
+    stockTransfers: [], // V2 — transferts de titres entrants/sortants (<Transfer>)
     hasStockData: false, // true si le XML contient AU MOINS un nœud STK (la Flex Query inclut la classe actions)
   };
 
@@ -5567,6 +5607,27 @@ function ibParseXML(xmlText) {
       amountBase: amount * fxRate,
       perShare: psMatch ? parseFloat(psMatch[2]) : 0,
       description: desc,
+      transactionID: node.getAttribute('transactionID') || '',
+    });
+  });
+
+  // ── V2 : TRANSFERTS de titres — <Transfer>. Un transfert n'est ni un achat ni une
+  // vente : il déplace des titres entre comptes. Sans lui, la quantité reconstruite ne
+  // colle plus au relevé et stockEconPru bascule le ticker sur le PRU IBKR.
+  // `quantity` est signée chez IB, mais `direction` (IN/OUT) fait foi quand elle est là.
+  doc.querySelectorAll('Transfer').forEach(node => {
+    if ((node.getAttribute('assetCategory') || '').toUpperCase() !== 'STK') return;
+    const ticker = (node.getAttribute('symbol') || '').trim();
+    const rawDt  = node.getAttribute('date') || node.getAttribute('dateTime') || node.getAttribute('reportDate') || '';
+    const date   = normDate(rawDt.length >= 8 ? rawDt.slice(0, 8) : rawDt);
+    let qty      = parseFloat(node.getAttribute('quantity')) || 0;
+    if (!ticker || !date || !qty) return;
+    const dir = (node.getAttribute('direction') || '').trim().toUpperCase();
+    if (dir === 'OUT')     qty = -Math.abs(qty);
+    else if (dir === 'IN') qty =  Math.abs(qty);
+    result.stockTransfers.push({
+      ticker, date, qty,
+      currency: node.getAttribute('currency') || 'USD',
       transactionID: node.getAttribute('transactionID') || '',
     });
   });
@@ -6095,6 +6156,27 @@ function ibMergeData(parsed) {
       byKey.set(dvKey(d), d);
     });
     stockDividends.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // ── V2 : transferts de titres — même stratégie de dedup que les dividendes
+  // (transactionID pour le XML, clé composite ticker|date|qty pour le CSV). Deux relevés
+  // qui se chevauchent déclarent le même transfert : il ne doit être compté qu'une fois.
+  if (parsed.stockTransfers && parsed.stockTransfers.length) {
+    const trKey = t => `${normTicker(t.ticker)}|${t.date}|${t.qty}`;
+    const byId  = new Map(stockTransfers.filter(t => t.transactionID).map(t => [t.transactionID, t]));
+    const byKey = new Map(stockTransfers.map(t => [trKey(t), t]));
+    parsed.stockTransfers.forEach(t => {
+      if (t.transactionID && byId.has(t.transactionID)) return;
+      const ex = byKey.get(trKey(t));
+      if (ex) {
+        if (t.transactionID && !ex.transactionID) Object.assign(ex, t);
+        return;
+      }
+      stockTransfers.push(t);
+      if (t.transactionID) byId.set(t.transactionID, t);
+      byKey.set(trKey(t), t);
+    });
+    stockTransfers.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   if (parsed.accountId) accountKPI._accountId = parsed.accountId;
@@ -6757,6 +6839,7 @@ function ibParseCSV(csvText) {
     stockPositions: [], stockPositionsAsOf: '', // V2 — snapshot actions/ETF (section "Positions ouvertes")
     stockTrades: [], // V2 — trades actions avec P/L réalisé
     stockDividends: [], // V2 — dividendes (DIV) et retenues à la source (TAX)
+    stockTransfers: [], // V2 — transferts de titres entrants/sortants (section "Transferts")
     hasStockData: false, // true si le CSV contient des lignes Actions (trades ou positions)
   };
 
@@ -7205,6 +7288,44 @@ function ibParseCSV(csvText) {
     });
   });
 
+  // ── V2 : TRANSFERTS de titres — section "Transferts" / "Transfers".
+  // Un transfert SORTANT retire des titres du compte sans être une vente : sans cette
+  // lecture, la quantité reconstruite dépasse celle du relevé et stockEconPru bascule
+  // tout le ticker sur le PRU IBKR (cas HIMS : 600 achetées − 100 transférées = 500).
+  // La quantité du CSV est déjà signée (négative sur un sortant) ; on se fie à la colonne
+  // Direction quand elle est exploitable, au signe sinon.
+  Object.keys(sections).forEach(secName => {
+    if (!/^(transferts?|transfers?)$/.test(secName.trim().toLowerCase())) return;
+    const hdr = (sections[secName] || {}).headers || [];
+    const _ti = (re, fb) => { const i = hdr.findIndex(h => re.test(h.trim().toLowerCase())); return i >= 0 ? i : fb; };
+    const tCateg = _ti(/cat[ée]gorie|category/, 0);
+    const tCcy   = _ti(/devise|currency/, 1);
+    const tSym   = _ti(/symbole|symbol/, 2);
+    const tDate  = _ti(/date/, 3);
+    const tDir   = _ti(/direction/, 5);
+    const tQty   = _ti(/^qt[ée]|quantit/, 8);
+    lines.forEach(line => {
+      if (!line.startsWith(secName + ',Data,')) return;
+      const f = parseLine(line).slice(2);
+      const categ = (f[tCateg] || '').trim();
+      if (/^total/i.test(categ)) return;                       // lignes Total / Total en EUR
+      if (!/^(actions?|stocks?)\b/i.test(categ)) return;        // titres uniquement
+      const date = (f[tDate] || '').trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      const ticker = (f[tSym] || '').trim();
+      let qty = parseFloat((f[tQty] || '0').replace(/,/g, '')) || 0;
+      if (!ticker || !qty) return;
+      const dir = (f[tDir] || '').trim().toLowerCase();
+      if (/sortant|out/.test(dir))     qty = -Math.abs(qty);
+      else if (/entrant|in\b/.test(dir)) qty =  Math.abs(qty);
+      result.stockTransfers.push({
+        ticker, date, qty,
+        currency: (f[tCcy] || 'USD').trim() || 'USD',
+        transactionID: '', // absent du CSV → dedup par clé composite au merge
+      });
+    });
+  });
+
   // ── Account Info (FR + EN)
   const infoLines = lines.filter(l => l.startsWith('Informations du compte,Data,') || l.startsWith('Account Information,Data,'));
   infoLines.forEach(line => {
@@ -7591,10 +7712,11 @@ function _doResetAllData() {
   // Clear transactions
   transactions.length = 0;
 
-  // V2 — clear stock/ETF snapshot + historiques trades actions et dividendes
+  // V2 — clear stock/ETF snapshot + historiques trades actions, dividendes et transferts
   stockPositions.length = 0;
   stockTrades.length = 0;
   stockDividends.length = 0;
+  stockTransfers.length = 0;
 
   // Reset accountKPI
   Object.keys(accountKPI).forEach(k => { delete accountKPI[k]; });
