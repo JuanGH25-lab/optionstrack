@@ -4233,7 +4233,12 @@ function renderEquities() {
           const cov = coverageOf(r);
           let covHtml = `<td class="mono neu" style="text-align:center">—</td>`;
           if (cov) {
-            const pct = Math.max(0, Math.min(100, (cov.engaged / r.qty) * 100));
+            // La barre se remplit de la capacité LIBRE, pas de la part engagée : le teal doit
+            // signaler ce sur quoi on peut encore agir. Rempli à l'engagé, les lignes saturées
+            // — celles où il n'y a rien à faire — étaient les plus lumineuses du tableau.
+            const freePct = cov.naked ? 100 : Math.max(0, Math.min(100, (cov.free / r.qty) * 100));
+            // Teal seulement si un lot complet est vendable ; sinon gris, même s'il reste des
+            // titres libres (en avoir 50 sur un lot de 100 n'est pas actionnable).
             const col = cov.naked ? 'var(--red)' : cov.lots > 0 ? '#00e5cc' : 'var(--c-dim)';
             const lbl = cov.naked ? `⚠ ${Math.abs(cov.free)}`
                       : cov.lots > 0 ? `${cov.lots} CC`
@@ -4243,9 +4248,13 @@ function renderEquities() {
               : `${cov.engaged} titre(s) immobilisé(s) par les calls vendus ouverts sur ${r.qty} détenu(s) — ${cov.free} libre(s)`
                 + (cov.lots > 0 ? `, soit ${cov.lots} covered call(s) encore vendable(s) au lot de ${cov.lot}.`
                                 : `, insuffisant pour un lot de ${cov.lot}.`);
+            // Largeurs fixes barre + libellé : sans ça le groupe se recentre selon la longueur
+            // du texte ("2 CC" vs "—") et les barres ne s'alignent plus d'une ligne à l'autre.
             covHtml = `<td style="text-align:center;white-space:nowrap" title="${tip}">`
-              + `<span class="eq-bar-bg" style="width:38px"><span style="display:block;height:4px;border-radius:3px;width:${pct.toFixed(1)}%;background:${cov.naked ? 'var(--red)' : 'var(--c-muted)'}"></span></span>`
-              + ` <span class="mono" style="font-size:10px;font-weight:600;color:${col}">${lbl}</span></td>`;
+              + `<span style="display:inline-flex;align-items:center;gap:6px">`
+              + `<span class="eq-bar-bg" style="width:38px;flex:none"><span style="display:block;height:4px;border-radius:3px;width:${freePct.toFixed(1)}%;background:${col}"></span></span>`
+              + `<span class="mono" style="display:inline-block;width:30px;text-align:left;font-size:10px;font-weight:600;color:${col}">${lbl}</span>`
+              + `</span></td>`;
           }
           return `<tr data-eq-ticker="${r.ticker}" data-name="${(r.description || '').replace(/"/g, '&quot;')}">
             <td><span class="eq-tick ${tickCcyClass(r.currency)}">${r.ticker}</span>${r.subCategory === 'ETF' ? ' <span class="eq-etf">ETF</span>' : ''}</td>
