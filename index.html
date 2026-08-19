@@ -3901,6 +3901,29 @@ function renderEquities() {
     return { ...p, live, price, valueOrig, valueBase, pru, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
   }).sort((a, b) => Math.abs(b.valueBase) - Math.abs(a.valueBase));
 
+  // ── V2 : COUVERTURE — titres immobilisés par les calls VENDUS encore ouverts, et donc
+  // nombre de covered calls qu'il reste possible de vendre sur la position.
+  // Seuls les calls VENDUS engagent des titres : un call ACHETÉ est un droit, il n'immobilise
+  // rien (même distinction SELL/BUY que le collatéral PUT et la colonne Distance).
+  // Non filtré par année : c'est un état COURANT, pas un flux de période.
+  const ccEngaged = {};   // ticker normalisé → titres immobilisés
+  const ccLotSize = {};   // ticker normalisé → taille du lot (100 par défaut, 500 à Hong Kong…)
+  transactions.forEach(t => {
+    const k = normTicker(t.ticker);
+    if (ccLotSize[k] == null) ccLotSize[k] = getMultiplier(t);
+    if (t.status !== 'Open' || t.action !== 'SELL' || t.type !== 'C') return;
+    ccEngaged[k] = (ccEngaged[k] || 0) + Math.abs(t.qty) * getMultiplier(t);
+  });
+  // { engaged, free, lots, naked } pour une ligne du tableau
+  const coverageOf = r => {
+    const k = normTicker(r.ticker);
+    const lot = ccLotSize[k] || 100;
+    const engaged = ccEngaged[k] || 0;
+    if (r.qty <= 0) return null;                       // position vendue à découvert → sans objet
+    const free = r.qty - engaged;
+    return { engaged, free, lot, lots: Math.floor(free / lot), naked: free < 0 };
+  };
+
   const totalValue  = rows.reduce((s, r) => s + r.valueBase, 0);
   const totalPnl    = rows.reduce((s, r) => s + r.pnlBase, 0);
   const totalCost   = rows.reduce((s, r) => s + (r.valueBase - r.pnlBase), 0);
@@ -4188,6 +4211,7 @@ function renderEquities() {
       <table class="eq-table">
         <thead><tr>
           <th>Ticker</th><th>Nom</th><th style="text-align:right">Qté</th>
+          <th style="text-align:center" title="Titres immobilisés par les calls vendus ouverts, et nombre de covered calls encore vendables sur les titres libres">Couverture</th>
           <th style="text-align:right">PRU</th>
           <th style="text-align:right" title="PRU − primes d'options nettes du ticker ÷ nb d'actions">PRU ajusté</th>
           <th style="text-align:right">Cours</th>
@@ -4205,14 +4229,33 @@ function renderEquities() {
           const pruTip = r.econOk
             ? `Coût d'achat réel moyen (primes comptées dans « Primes collectées », non déduites ici)`
             : `PRU du relevé IBKR (primes des options assignées déduites) — importez l'historique d'achat complet pour le coût économique`;
+          // ── Couverture : barre engagé/détenu + nombre de CC encore vendables
+          const cov = coverageOf(r);
+          let covHtml = `<td class="mono neu" style="text-align:center">—</td>`;
+          if (cov) {
+            const pct = Math.max(0, Math.min(100, (cov.engaged / r.qty) * 100));
+            const col = cov.naked ? 'var(--red)' : cov.lots > 0 ? '#00e5cc' : 'var(--c-dim)';
+            const lbl = cov.naked ? `⚠ ${Math.abs(cov.free)}`
+                      : cov.lots > 0 ? `${cov.lots} CC`
+                      : '—';
+            const tip = cov.naked
+              ? `Calls vendus à découvert : ${cov.engaged} titres engagés pour ${r.qty} détenus (${Math.abs(cov.free)} non couverts).`
+              : `${cov.engaged} titre(s) immobilisé(s) par les calls vendus ouverts sur ${r.qty} détenu(s) — ${cov.free} libre(s)`
+                + (cov.lots > 0 ? `, soit ${cov.lots} covered call(s) encore vendable(s) au lot de ${cov.lot}.`
+                                : `, insuffisant pour un lot de ${cov.lot}.`);
+            covHtml = `<td style="text-align:center;white-space:nowrap" title="${tip}">`
+              + `<span class="eq-bar-bg" style="width:38px"><span style="display:block;height:4px;border-radius:3px;width:${pct.toFixed(1)}%;background:${cov.naked ? 'var(--red)' : 'var(--c-muted)'}"></span></span>`
+              + ` <span class="mono" style="font-size:10px;font-weight:600;color:${col}">${lbl}</span></td>`;
+          }
           return `<tr data-eq-ticker="${r.ticker}" data-name="${(r.description || '').replace(/"/g, '&quot;')}">
             <td><span class="eq-tick ${tickCcyClass(r.currency)}">${r.ticker}</span>${r.subCategory === 'ETF' ? ' <span class="eq-etf">ETF</span>' : ''}</td>
             <td style="font-size:11px;color:var(--c-muted);max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
             <td class="mono" style="text-align:right;color:${r.qty < 0 ? 'var(--red)' : 'var(--c-text)'}">${r.qty}</td>
+            ${covHtml}
             <td class="mono neu" style="text-align:right" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
             <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${prem.sum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
             <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
-            <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? ` <span style="color:var(--text-dim);font-size:9px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</span>` : ''}</td>
+            <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? `<div style="color:var(--text-dim);font-size:9px;font-weight:400;margin-top:1px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</div>` : ''}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlBase)};font-weight:600">${sign(r.pnlBase)}${fmt(r.pnlBase)}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlPct)}">${sign(r.pnlPct)}${r.pnlPct.toFixed(2)}%</td>
             <td><span class="eq-bar-bg"><span style="display:block;height:4px;border-radius:3px;width:${Math.min(100, Math.abs(weight)).toFixed(1)}%;background:#00e5cc"></span></span> <span class="mono" style="font-size:10px;color:var(--c-muted)">${Math.abs(weight).toFixed(1)}%</span></td>
