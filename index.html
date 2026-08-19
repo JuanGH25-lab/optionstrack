@@ -746,11 +746,27 @@ function getRateToUSD(ccy, date) {
 // Convert 1 unit of `currency` into the account BASE currency on `date`.
 // Pivots through USD so it works for ANY base (USD, EUR, GBP, …), not just USD.
 // e.g. base=EUR, currency=USD: rate = (USD→USD=1) / (EUR→USD≈1.16) ≈ 0.86.
+// Devises déjà signalées — un avertissement par devise, pas un par ligne convertie.
+const _fxMissing = new Set();
+// Le repli à 1.0 laisse le montant TEL QUEL : une prime de 1 000 DKK (~134 €) est alors
+// comptée 1 000 €. Il est indispensable (mieux vaut un chiffre brut qu'un plantage) mais il
+// doit être BRUYANT : muet, il produit des totaux faux d'apparence parfaitement normale.
+function fxWarnMissing(currency) {
+  if (!currency || _fxMissing.has(currency)) return;
+  _fxMissing.add(currency);
+  const msg = `Aucun taux de change connu pour ${currency} : les montants dans cette devise ne sont PAS convertis en ${BASE_CCY} et sont comptés à leur valeur faciale. Ajoutez ${currency} à CCYS dans update-fx-rates.sh, puis régénérez fx-rates.js.`;
+  console.warn('[OLT Tracker] ' + msg);
+  try { ibLog(`⚠️ ${msg}`, 'warn'); } catch {}
+}
+
 function getFxRate(currency, date) {
   if (!currency || currency === BASE_CCY) return 1.0;
   const ccyToUSD  = getRateToUSD(currency, date);  // currency → USD
   const baseToUSD = getRateToUSD(BASE_CCY, date);   // base     → USD
-  if (ccyToUSD == null || !baseToUSD) return 1.0;   // safe fallback (legacy behavior)
+  if (ccyToUSD == null || !baseToUSD) {             // repli sûr, mais signalé
+    fxWarnMissing(ccyToUSD == null ? currency : BASE_CCY);
+    return 1.0;
+  }
   return ccyToUSD / baseToUSD;                       // currency → base
 }
 
@@ -5407,6 +5423,10 @@ function ibParseXML(xmlText) {
   // Expose on result so ibMergeData can use the authoritative year
   result.flexFromDate = flexFrom;
   result.flexToDate   = flexTo;
+  // Interface commune aux deux parseurs (le CSV pose les mêmes champs) — sert à la purge
+  // des buckets de dépôts mensuels couverts par la période du relevé.
+  result.periodStart  = flexFrom;
+  result.periodEnd    = flexTo;
 
   const normDate = d => {
     if (!d) return '';
@@ -6058,12 +6078,47 @@ function ibMergeData(parsed) {
     accountKPI.depositsGross = Object.keys(accountKPI).filter(k => k.startsWith('_depositsGross_')).reduce((s, k) => s + accountKPI[k], 0);
     accountKPI.withdrawals   = Object.keys(accountKPI).filter(k => k.startsWith('_withdrawals_')).reduce((s, k) => s + accountKPI[k], 0);
   }
-  // Ventilation MENSUELLE des dépôts (pour le capital en début de mois).
-  // Replace par mois (idempotent sur ré-import) — additif, n'affecte pas les totaux annuels.
+  // ── Ventilation MENSUELLE des dépôts (alimente le capital en début de mois).
+  //
+  // Écrire mois par mois ne suffit PAS à rendre le ré-import idempotent : un bucket posé
+  // par un import antérieur, sur un mois que le nouveau relevé ne mentionne pas, survivait
+  // indéfiniment. Le total annuel `_deposits_YYYY`, lui, est remplacé en bloc — les deux
+  // sources divergeaient donc silencieusement, et le rapport mensuel (qui lit les buckets)
+  // s'écartait du KPI « Cash déposé » (qui lit le total annuel).
+  //
+  // On purge donc d'abord les mois ENTIÈREMENT couverts par la période du relevé : ce qu'il
+  // ne déclare pas pour ces mois-là est, par construction, un résidu. Les mois de bord
+  // partiellement couverts sont laissés intacts — les écraser avec des données tronquées
+  // serait pire que le mal.
+  const _depFrom = parsed.periodStart || parsed.flexFromDate || '';
+  const _depTo   = parsed.periodEnd   || parsed.flexToDate   || '';
+  if (_depFrom && _depTo) {
+    const lastDay = mo => { const [y, m] = mo.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+    Object.keys(accountKPI).forEach(k => {
+      if (!k.startsWith('_depositsM_')) return;
+      const mo = k.slice('_depositsM_'.length);
+      if (mo + '-01' >= _depFrom && lastDay(mo) <= _depTo) delete accountKPI[k];
+    });
+  }
   if (parsed.depositsByMonth && Object.keys(parsed.depositsByMonth).length) {
     Object.entries(parsed.depositsByMonth).forEach(([mo, amt]) => {
       accountKPI[`_depositsM_${mo}`] = amt; // replace, not accumulate
     });
+  }
+  // Garde-fou : les deux sources doivent concorder sur une année pleinement couverte.
+  // Un écart signale un relevé partiel ou un résidu que la purge n'a pas pu atteindre —
+  // on le signale plutôt que de laisser deux chiffres se contredire en silence.
+  if (_depFrom && _depTo) {
+    const yr = _depTo.slice(0, 4);
+    if (_depFrom <= `${yr}-01-01` && _depTo >= `${yr}-12-31`) {
+      const sumM = Object.keys(accountKPI)
+        .filter(k => k.startsWith(`_depositsM_${yr}-`))
+        .reduce((s, k) => s + accountKPI[k], 0);
+      const annual = accountKPI[`_deposits_${yr}`] || 0;
+      if (Math.abs(sumM - annual) > 0.01) {
+        ibLog(`⚠️ Dépôts ${yr} : la ventilation mensuelle totalise ${fmt(sumM)} alors que le relevé annonce ${fmt(annual)}. Le rapport mensuel utilisera la première, le KPI « Cash déposé » la seconde.`, 'warn');
+      }
+    }
   }
   {
     const intKey = `_interest_${mostRecentYear}`;
@@ -6983,31 +7038,50 @@ function ibParseCSV(csvText) {
     const base = stmtBase || BASE_CCY;
     if (!ccy || ccy === base) return 1.0;
     const a = getRateToUSD(ccy, date), b = getRateToUSD(base, date);
-    if (a == null || !b) return 1.0;
+    if (a == null || !b) { fxWarnMissing(a == null ? ccy : base); return 1.0; }
     return a / b;
   };
 
-  // ── V2 : date de FIN de période du relevé (sert de reportDate/asOf aux positions actions,
-  // le CSV n'ayant pas de reportDate par ligne). Formats gérés : ISO, français, anglais.
-  let csvPeriodEnd = '';
+  // ── V2 : bornes de période du relevé. La FIN sert de reportDate/asOf aux positions
+  // actions (le CSV n'a pas de reportDate par ligne) ; le DÉBUT sert à purger les buckets
+  // de dépôts mensuels couverts par ce relevé (voir ibMergeData).
+  //
+  // Trois écritures coexistent chez IBKR et il faut les trois : ISO, « 1 janvier 2024 »
+  // (jour d'abord) et « Janvier 1, 2024 » (mois d'abord). Cette dernière est celle des
+  // relevés FRANÇAIS — noms de mois français dans l'ordre anglais — et elle n'était
+  // reconnue par aucun des deux motifs précédents : csvPeriodEnd ressortait VIDE sur
+  // 100 % des relevés français testés, privant les positions actions de leur date de
+  // valorisation (repli silencieux sur le taux de change du jour).
+  let csvPeriodStart = '', csvPeriodEnd = '';
   {
     const periodLine = lines.find(l => /^(Déclaration|Statement),Data,(Period|Période)/i.test(l));
     const val = periodLine ? (parseLine(periodLine)[3] || '') : '';
-    const frMonths = {janvier:'01',février:'02',fevrier:'02',mars:'03',avril:'04',mai:'05',juin:'06',juillet:'07',août:'08',aout:'08',septembre:'09',octobre:'10',novembre:'11',décembre:'12',decembre:'12'};
-    const enMonths = {january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
-    let m, last = '';
+    const MONTHS = {
+      janvier:'01', février:'02', fevrier:'02', mars:'03', avril:'04', mai:'05', juin:'06',
+      juillet:'07', août:'08', aout:'08', septembre:'09', octobre:'10', novembre:'11',
+      décembre:'12', decembre:'12',
+      january:'01', february:'02', march:'03', april:'04', may:'05', june:'06',
+      july:'07', august:'08', september:'09', october:'10', november:'11', december:'12',
+    };
+    const names = Object.keys(MONTHS).join('|');
+    const found = [];
+    let m;
     const isoRe = /(\d{4})-(\d{2})-(\d{2})/g;
-    while ((m = isoRe.exec(val))) last = `${m[1]}-${m[2]}-${m[3]}`;
-    if (!last) {
-      const frRe = new RegExp(`(\\d{1,2})\\s+(${Object.keys(frMonths).join('|')})\\s+(\\d{4})`, 'gi');
-      while ((m = frRe.exec(val))) last = `${m[3]}-${frMonths[m[2].toLowerCase()]}-${m[1].padStart(2,'0')}`;
+    while ((m = isoRe.exec(val))) found.push(`${m[1]}-${m[2]}-${m[3]}`);
+    if (!found.length) { // « 1 janvier 2024 »
+      const dmy = new RegExp(`(\\d{1,2})\\s+(${names})\\s+(\\d{4})`, 'gi');
+      while ((m = dmy.exec(val))) found.push(`${m[3]}-${MONTHS[m[2].toLowerCase()]}-${m[1].padStart(2,'0')}`);
     }
-    if (!last) {
-      const enRe = new RegExp(`(${Object.keys(enMonths).join('|')})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'gi');
-      while ((m = enRe.exec(val))) last = `${m[3]}-${enMonths[m[1].toLowerCase()]}-${m[2].padStart(2,'0')}`;
+    if (!found.length) { // « Janvier 1, 2024 » / « January 1, 2024 »
+      const mdy = new RegExp(`(${names})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'gi');
+      while ((m = mdy.exec(val))) found.push(`${m[3]}-${MONTHS[m[1].toLowerCase()]}-${m[2].padStart(2,'0')}`);
     }
-    csvPeriodEnd = last;
+    found.sort();
+    csvPeriodStart = found[0] || '';
+    csvPeriodEnd   = found[found.length - 1] || '';
   }
+  result.periodStart = csvPeriodStart;
+  result.periodEnd   = csvPeriodEnd;
 
   // ── Build symbol → multiplier map from "Informations instrument financier"
   // Header: Catégorie,Symbole,Description,Conid,ID Titre,Underlying,Liste des Bourses,Multiplicateur,...
