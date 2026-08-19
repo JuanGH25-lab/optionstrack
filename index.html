@@ -8128,6 +8128,19 @@ async function ibAutoSync() {
         </div>
 
         <!-- Step: Nouveau mot de passe (arrivée via lien de réinitialisation) -->
+        <!-- Écran intermédiaire du lien de réinitialisation : le jeton n'est consommé qu'au
+             CLIC sur le bouton. Les scanners de messagerie (Outlook Safe Links, antivirus)
+             visitent automatiquement les liens des emails entrants ; s'ils atterrissaient sur
+             un lien qui vérifie tout seul, ils brûleraient le jeton à usage unique et le
+             membre recevrait « lien expiré » avant même d'avoir cliqué. Ils chargent la page,
+             ils ne cliquent pas. -->
+        <div id="auth-step-confirm" style="display:none">
+          <div class="auth-step-title">Réinitialiser votre mot de passe 🔑</div>
+          <div class="auth-step-sub">Cliquez ci-dessous pour continuer et choisir un nouveau mot de passe</div>
+          <div id="auth-error-confirm" class="auth-error"></div>
+          <button class="auth-btn" id="auth-confirm-btn">Continuer →</button>
+        </div>
+
         <div id="auth-step-reset" style="display:none">
           <div class="auth-step-title">Nouveau mot de passe 🔑</div>
           <div class="auth-step-sub">Choisissez un nouveau mot de passe pour votre compte</div>
@@ -8179,11 +8192,12 @@ function showStep(step) {
   document.getElementById('auth-step-register').style.display = step === 'register' ? '' : 'none';
   document.getElementById('auth-step-login').style.display    = step === 'login'    ? '' : 'none';
   document.getElementById('auth-step-reset').style.display    = step === 'reset'    ? '' : 'none';
+  document.getElementById('auth-step-confirm').style.display  = step === 'confirm'  ? '' : 'none';
   clearAuthErrors();
 }
 
 function clearAuthErrors() {
-  ['auth-error-email','auth-error-register','auth-error-login','auth-success-login','auth-error-reset','auth-success-reset'].forEach(id => {
+  ['auth-error-email','auth-error-register','auth-error-login','auth-success-login','auth-error-reset','auth-success-reset','auth-error-confirm'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = ''; el.classList.remove('visible'); }
   });
@@ -8364,10 +8378,22 @@ document.getElementById('auth-register-btn').addEventListener('click', handleReg
 document.getElementById('auth-login-btn').addEventListener('click', handleLogin);
 document.getElementById('auth-reset-btn').addEventListener('click', handleResetPassword);
 
-// Arrivée via un lien de réinitialisation (#...type=recovery) → écran "nouveau mot de passe"
-// (capturé sur le hash avant que Supabase ne le consomme, + via l'event PASSWORD_RECOVERY)
+// ── Arrivée via un lien de réinitialisation, deux formes possibles.
+//
+// 1. NOUVELLE (recommandée) : le modèle d'email pointe vers NOTRE domaine avec
+//    ?token_hash=…&type=recovery. Rien n'est consommé au chargement : c'est le clic sur
+//    « Continuer » qui appelle verifyOtp. Un scanner de messagerie charge la page sans
+//    rien déclencher, là où l'ancien lien /auth/v1/verify brûlait le jeton au premier GET.
+//
+// 2. ANCIENNE : Supabase a déjà vérifié et nous renvoie les jetons dans le fragment
+//    (#access_token=…&type=recovery). Conservée pour les liens encore en circulation et
+//    pour ne rien casser si le modèle d'email n'est pas encore à jour.
+const _authQS = new URLSearchParams(window.location.search);
+const _tokenHash = _authQS.get('token_hash');
+const _linkType  = _authQS.get('type');
 let recoveryMode = window.location.hash.includes('type=recovery');
-const _authLinkErr = /error_code=([a-z_]+)/.exec(window.location.hash);
+const _authLinkErr = /error_code=([a-z_]+)/.exec(window.location.hash)
+                  || (_authQS.get('error_code') ? [null, _authQS.get('error_code')] : null);
 supa.auth.onAuthStateChange((event) => {
   if (event === 'PASSWORD_RECOVERY') {
     recoveryMode = true;
@@ -8376,14 +8402,39 @@ supa.auth.onAuthStateChange((event) => {
   }
 });
 
+// Consomme le jeton — uniquement sur action explicite de l'utilisateur.
+async function confirmRecoveryLink() {
+  const btn = document.getElementById('auth-confirm-btn');
+  clearAuthErrors();
+  if (btn) { btn.disabled = true; btn.textContent = 'Vérification…'; }
+  const { error } = await supa.auth.verifyOtp({ token_hash: _tokenHash, type: _linkType || 'recovery' });
+  if (btn) { btn.disabled = false; btn.textContent = 'Continuer →'; }
+  if (error) {
+    // Le lien a déjà servi, ou son heure est passée : Supabase ne distingue pas les deux.
+    showError('auth-error-confirm', /expired|invalid/i.test(error.message)
+      ? "Ce lien n'est plus valide : il a peut-être déjà été ouvert, ou sa durée de vie d'une heure est dépassée. Redemandez-en un nouveau depuis l'écran de connexion."
+      : error.message);
+    return;
+  }
+  history.replaceState(null, '', window.location.pathname); // retire le jeton de la barre d'adresse
+  recoveryMode = true;
+  showStep('reset');
+}
+document.getElementById('auth-confirm-btn').addEventListener('click', confirmRecoveryLink);
+
 // Check existing session on load
 (async () => {
+  // Lien nouvelle forme : on affiche le bouton et on s'arrête là. AUCUN appel réseau tant
+  // que l'utilisateur n'a pas cliqué — c'est toute la protection contre les scanners.
+  if (_tokenHash) { showAuthScreen(); showStep('confirm'); return; }
   if (recoveryMode) { showAuthScreen(); showStep('reset'); return; } // ne pas auto-connecter : laisser définir le mdp
   if (_authLinkErr) { // lien de réinitialisation expiré/invalide → message clair
-    history.replaceState(null, '', window.location.pathname + window.location.search);
+    history.replaceState(null, '', window.location.pathname);
     showAuthScreen(); showStep('email');
+    // « otp_expired » couvre AUSSI un jeton déjà consommé — l'API ne les distingue pas.
+    // Le message doit donc mentionner les deux, sous peine d'envoyer le membre en boucle.
     showError('auth-error-email', _authLinkErr[1] === 'otp_expired'
-      ? 'Le lien de réinitialisation a expiré. Veuillez en redemander un nouveau.'
+      ? "Ce lien de réinitialisation n'est plus valide : il a peut-être déjà été ouvert, ou sa durée de vie est dépassée. Veuillez en redemander un nouveau."
       : 'Lien invalide ou expiré. Veuillez réessayer.');
     return;
   }
