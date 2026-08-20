@@ -212,7 +212,7 @@
 :root {
   --bg:#0d1117; --surface:#161b22; --surface2:#1c2330; --surface3:#21262d;
   --border:#21262d; --border2:#30363d;
-  --text:#e6edf3; --text-muted:#7d8590; --text-dim:#4d5560;
+  --text:#e6edf3; --text-muted:#7d8590; --text-dim:#4d5560; --text-soft:#9fb2c4;
   --blue:#1f6feb; --green:#2ea043; --orange:#f0883e;
   --red:#f85149; --purple:#bc8cff; --cyan:#39c5cf;
   --nav-w:224px;
@@ -233,7 +233,7 @@
 html.light {
   --bg:#f6f8fa; --surface:#ffffff; --surface2:#f0f2f5; --surface3:#e8ebef;
   --border:#d0d7de; --border2:#c6cdd5;
-  --text:#1f2328; --text-muted:#636c76; --text-dim:#9198a1;
+  --text:#1f2328; --text-muted:#636c76; --text-dim:#9198a1; --text-soft:#4a5b6e;
   --blue:#0969da; --green:#1a7f37; --orange:#bc4c00;
   --red:#d1242f; --purple:#8250df; --cyan:#0598a8;
   /* Extended design system — light overrides */
@@ -2486,7 +2486,7 @@ function renderCalculator() {
     <div class="topbar-title">Calculateur de rendement</div>
     <div id="topbar-meta" style="font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace"></div>
   </div>
-  <div style="max-width:680px;margin:0 auto;padding:32px 24px">
+  <div style="max-width:880px;margin:0 auto;padding:32px 24px">
 
     <!-- Input card -->
     <div class="chart-section" style="margin-bottom:24px">
@@ -2535,24 +2535,31 @@ function renderCalculator() {
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:8px">
         <span style="background:rgba(0,229,204,0.1);border:1px solid rgba(0,229,204,0.2);border-radius:8px;padding:4px 10px;font-size:12px;color:#00e5cc">Résultats</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:20px">
         <!-- DTE -->
         <div class="chart-section" style="text-align:center;padding:20px 16px">
           <div style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Jours restants</div>
           <div id="calc-dte" style="font-size:36px;font-weight:700;font-family:'DM Mono',monospace;color:var(--text);line-height:1">—</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">DTE</div>
+          <div style="font-size:11px;color:var(--text-soft);margin-top:6px">DTE</div>
         </div>
-        <!-- Rendement -->
+        <!-- Rendement réel -->
         <div class="chart-section" style="text-align:center;padding:20px 16px;border-color:rgba(0,229,204,0.3)">
-          <div style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Rendement</div>
+          <div style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Rendement réel</div>
           <div id="calc-yield" style="font-size:36px;font-weight:700;font-family:'DM Mono',monospace;color:#00e5cc;line-height:1">—</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">prime / collatéral</div>
+          <div style="font-size:11px;color:var(--text-soft);margin-top:6px">prime / collatéral</div>
+        </div>
+        <!-- Rendement mensualisé — base 365/12 (≈30,44 j) et NON 30 pile, pour que
+             mensualisé × 12 redonne exactement l'annualisé affiché à côté. -->
+        <div class="chart-section" style="text-align:center;padding:20px 16px;border-color:rgba(46,204,113,0.3)">
+          <div style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Rendement mensualisé</div>
+          <div id="calc-mth-yield" style="font-size:36px;font-weight:700;font-family:'DM Mono',monospace;color:#2ecc71;line-height:1">—</div>
+          <div style="font-size:11px;color:var(--text-soft);margin-top:6px">rendement × (30,44 / DTE)</div>
         </div>
         <!-- Rendement annualisé -->
         <div class="chart-section" style="text-align:center;padding:20px 16px;border-color:rgba(240,136,62,0.3)">
           <div style="font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Rendement annualisé</div>
           <div id="calc-ann-yield" style="font-size:36px;font-weight:700;font-family:'DM Mono',monospace;color:#f0883e;line-height:1">—</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">rendement × (365 / DTE)</div>
+          <div style="font-size:11px;color:var(--text-soft);margin-top:6px">rendement × (365 / DTE)</div>
         </div>
       </div>
       <!-- Detail row -->
@@ -2572,7 +2579,7 @@ function renderCalculator() {
     </div>
 
     <!-- Empty state -->
-    <div id="calc-empty" style="text-align:center;padding:48px 24px;color:var(--text-muted)">
+    <div id="calc-empty" style="text-align:center;padding:48px 24px;color:var(--text)">
       <div style="font-size:40px;margin-bottom:12px">🧮</div>
       <div style="font-size:14px">Renseignez la prime, le strike et la date d'expiration<br>pour calculer le rendement.</div>
     </div>
@@ -2602,12 +2609,18 @@ function calcYield() {
   const netPrem  = premium - Math.abs(fees);
   const yield_   = netPrem / collat;
   const annYield = yield_ * (365 / dte);
+  // Mois moyen = 365/12 ≈ 30,44 jours. Prendre 30 pile romprait l'égalité
+  // mensualisé × 12 = annualisé, et les deux cartes se contrediraient à l'écran.
+  const mthYield = yield_ * ((365 / 12) / dte);
 
-  // Couleur rendement annualisé
+  // Couleur : mensualisé et annualisé mesurent la MÊME grandeur à un facteur 12 près,
+  // ils partagent donc le même verdict — deux seuils distincts pourraient les opposer.
   const annCol = annYield >= 0.20 ? '#00e5cc' : annYield >= 0.08 ? '#f0883e' : '#f85149';
 
   document.getElementById('calc-dte').textContent         = dte + 'd';
   document.getElementById('calc-yield').textContent       = (yield_ * 100).toFixed(2) + '%';
+  document.getElementById('calc-mth-yield').textContent   = (mthYield * 100).toFixed(2) + '%';
+  document.getElementById('calc-mth-yield').style.color   = annCol;
   document.getElementById('calc-ann-yield').textContent   = (annYield * 100).toFixed(1) + '%';
   document.getElementById('calc-ann-yield').style.color   = annCol;
   document.getElementById('calc-collateral').textContent  = ccySym() + collat.toLocaleString('fr-FR');
