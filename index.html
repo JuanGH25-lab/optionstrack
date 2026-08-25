@@ -4597,19 +4597,26 @@ function renderPositions() {
                   const groups = Object.values(cellGrouped);
                   // Halo ITM/OTM : vert = OTM (safe), rouge = ITM (risque). Neutre si cours indispo.
                   // PUT ITM si cours < strike ; CALL ITM si cours > strike.
+                  //
+                  // UNE CASE PAR POSITION, et non une case par échéance : un strangle (CSP + CC
+                  // au même strike-date) mettait ses deux jambes dans un seul rectangle avec un
+                  // halo commun, allumé dès qu'UNE des deux était ITM — sans dire laquelle.
+                  // Chaque jambe porte désormais son propre halo.
                   const px = livePrices[ticker];
-                  let halo = '';
-                  if (px != null) {
-                    const anyITM = groups.some(g => g.type === 'P' ? px < g.strike : px > g.strike);
-                    halo = anyITM
-                      ? 'border-color:rgba(248,81,73,0.65);box-shadow:0 0 10px rgba(248,81,73,0.45)'
-                      : 'border-color:rgba(46,204,113,0.6);box-shadow:0 0 10px rgba(46,204,113,0.40)';
-                  }
                   return `<td style="padding:4px">
-                    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;text-align:center;${halo}">
+                    <div style="display:flex;flex-direction:column;gap:5px">
                       ${groups.map(t => {
                         const sym = ccySym(t.currency);
-                        return `<div style="margin-bottom:${groups.length>1?'5px':'0'}">
+                        const itm = px == null ? null : (t.type === 'P' ? px < t.strike : px > t.strike);
+                        const halo = itm == null ? ''
+                          : itm ? 'border-color:rgba(248,81,73,0.65);box-shadow:0 0 10px rgba(248,81,73,0.45)'
+                                : 'border-color:rgba(46,204,113,0.6);box-shadow:0 0 10px rgba(46,204,113,0.40)';
+                        // Écart au strike en infobulle : le halo dit le sens, le chiffre dit de combien.
+                        const ecart = px == null ? 0 : (t.type === 'P' ? (px - t.strike) / t.strike : (t.strike - px) / t.strike) * 100;
+                        const tip = px == null
+                          ? `${t.type === 'C' ? 'CALL' : 'PUT'} ${sym}${t.strike} — cours indisponible`
+                          : `${t.type === 'C' ? 'CALL' : 'PUT'} ${sym}${t.strike} — cours ${sym}${px.toFixed(2)} · ${itm ? 'ITM' : 'OTM'} de ${Math.abs(ecart).toFixed(1)}%`;
+                        return `<div title="${tip}" style="background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;text-align:center;${halo}">
                           <div style="display:flex;align-items:center;justify-content:center;gap:4px">
                             <span class="tag ${t.type.toLowerCase()}" style="font-size:9px;padding:1px 5px">${t.type==='C'?'C':'P'}</span>
                             <span style="font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:var(--text)">${sym}${t.strike}</span>
