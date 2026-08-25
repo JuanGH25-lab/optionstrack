@@ -6250,7 +6250,13 @@ function ibMergeData(parsed) {
     parsed.stockTrades.forEach(t => {
       if (t.transactionID && byId.has(t.transactionID)) return; // déjà importé (ré-import XML)
       const ex = byKey.get(stKey(t));
-      if (ex) {
+      // La clé composite ne sert QU'À rapprocher une ligne CSV (sans transactionID) de son
+      // équivalent XML. Si les deux côtés portent un transactionID et qu'ils diffèrent, ce
+      // sont deux exécutions DISTINCTES : IBKR découpe un ordre en tranches qui partagent
+      // souvent ticker|date|heure|qté|prix à la seconde près. Les confondre supprimait des
+      // titres en silence (cas DVLT : 4 tranches à 12:28:39, deux paires de quantités
+      // identiques → 409 titres évaporés sur une vente de 10 000).
+      if (ex && !(t.transactionID && ex.transactionID)) {
         // Même trade venu d'une autre source : upgrade CSV→XML (transactionID + fx exact), sinon skip
         if (t.transactionID && !ex.transactionID) Object.assign(ex, t);
         return;
