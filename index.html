@@ -2663,7 +2663,32 @@ function renderGrowth() {
     }); });
     return ((fn + rb.reduce((s,b) => s + txNet(b), 0)) / cb) * 100;
   });
-  const defaultYield = 1.5;
+  // ── Rendement mensuel moyen RÉEL du membre, sur ses 12 derniers mois COMPLETS.
+  // Calculé directement depuis `transactions` et non via buildMonthlyTimeline(), qui est
+  // filtré par l'année sélectionnée. Le mois en cours est exclu : partiel, il tirerait la
+  // moyenne vers le bas. Sert de valeur par défaut au lieu du 1.5 % codé en dur — le code
+  // construisait déjà `yieldRatios` sans jamais s'en servir.
+  const _byMonth = {};
+  transactions.forEach(t => { const mo = t.date.slice(0, 7); _byMonth[mo] = (_byMonth[mo] || 0) + txNet(t); });
+  const _nowM = new Date().toISOString().slice(0, 7);
+  const _hist = Object.keys(_byMonth).filter(mo => mo < _nowM).sort().slice(-12);
+  // Chaque mois est rapporté au capital dont on disposait CE MOIS-LÀ, pas au capital
+  // d'aujourd'hui. Diviser une prime encaissée il y a un an par un capital qui a doublé
+  // depuis écraserait la moyenne et sous-estimerait la performance réelle.
+  // Même source que le rapport mensuel : les deux écrans affichent le même rendement.
+  const _rates = _hist
+    .map(mo => { const c = oltMonthCapital(mo).effective; return c > 0 ? (_byMonth[mo] / c) * 100 : null; })
+    .filter(v => v != null);
+  const realYield = _rates.length ? _rates.reduce((s, v) => s + v, 0) / _rates.length : null;
+  const realSigma = _rates.length >= 6
+    ? Math.sqrt(_rates.reduce((s, v) => s + (v - realYield) ** 2, 0) / _rates.length)
+    : null;
+  window._growthRealYield = realYield;
+  window._growthSigma     = realSigma;
+
+  const prefs = growthLoadPrefs();
+  const defaultYield = prefs.yieldPct != null ? prefs.yieldPct
+                     : (realYield != null ? Math.round(realYield * 100) / 100 : 1.5);
 
   document.getElementById('content').innerHTML = `
     <style>
@@ -2691,6 +2716,7 @@ function renderGrowth() {
           <div>
             <div class="gr-label">Rendement mensuel moy. (%)</div>
             <input class="gr-input" type="number" id="g-yield" value="${defaultYield}" min="0" max="100" step="0.1" oninput="syncYield('g-yield');growthUpdate();goalUpdate()">
+            ${realYield != null ? `<div style="font-size:10px;color:var(--c-muted);margin-top:4px">Votre moyenne 12 mois : <a href="#" onclick="growthUseReal();return false" style="color:#00e5cc;text-decoration:none;font-family:'DM Mono',monospace">${realYield.toFixed(2)}%</a></div>` : ''}
           </div>
         </div>
 
@@ -2700,9 +2726,15 @@ function renderGrowth() {
           <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--c-muted)"><span>0% (aucun)</span><span>100% (tout)</span></div>
         </div>
 
-        <div style="margin-bottom:14px">
-          <div class="gr-label">Dépôts mensuels ($)</div>
-          <input class="gr-input" type="number" id="g-deposit" value="0" min="0" oninput="growthUpdate();goalUpdate()">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div>
+            <div class="gr-label">Dépôts mensuels ($)</div>
+            <input class="gr-input" type="number" id="g-deposit" value="${prefs.deposit ?? 0}" min="0" oninput="growthUpdate();goalUpdate()">
+          </div>
+          <div>
+            <div class="gr-label">Fiscalité (%)</div>
+            <input class="gr-input" type="number" id="g-tax" value="${prefs.taxPct ?? 0}" min="0" max="99" step="0.5" oninput="growthUpdate();goalUpdate()" title="Taux d'imposition sur les primes. L'impôt est prélevé une fois par an, comme dans la plupart des régimes : le capital travaille donc jusqu'à l'échéance fiscale.">
+          </div>
         </div>
 
         <div style="margin-bottom:18px">
@@ -2727,7 +2759,12 @@ function renderGrowth() {
             <div style="width:1px;align-self:stretch;background:var(--card-border)"></div>
             <div style="flex:1">
               <div class="gr-kpi-val" id="g-premium-val" style="color:#2ecc71">—</div>
-              <div class="gr-kpi-lbl">Primes / mois · à terme</div>
+              <div class="gr-kpi-lbl" id="g-premium-lbl">Primes / mois · à terme</div>
+            </div>
+            <div style="width:1px;align-self:stretch;background:var(--card-border)"></div>
+            <div style="flex:1">
+              <div class="gr-kpi-val" id="g-tax-total" style="color:var(--orange)">—</div>
+              <div class="gr-kpi-lbl">Impôt cumulé</div>
             </div>
           </div>
         </div>
@@ -2737,14 +2774,21 @@ function renderGrowth() {
       <div class="gr-card">
         <div style="font-size:15px;font-weight:700;color:var(--c-text);margin-bottom:18px">🎯 Objectif mensuel</div>
 
-        <div style="margin-bottom:14px">
-          <div class="gr-label">Revenu mensuel cible ($)</div>
-          <input class="gr-input" type="number" id="goal-revenue" value="5000" min="0" oninput="goalUpdate()">
-        </div>
-
-        <div style="margin-bottom:4px">
-          <div class="gr-label">Rendement mensuel moy. (%) <span style="color:var(--c-muted);font-size:9px;text-transform:none;letter-spacing:0">— synchronisé</span></div>
-          <input class="gr-input" type="number" id="goal-yield" value="${defaultYield}" min="0" max="100" step="0.1" oninput="syncYield('goal-yield');growthUpdate();goalUpdate()">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div>
+            <div class="gr-label">Revenu mensuel cible ($)</div>
+            <div style="display:flex;gap:6px">
+              <input class="gr-input" type="number" id="goal-revenue" value="${prefs.goalRevenue ?? 5000}" min="0" oninput="goalUpdate()" style="flex:1;min-width:0">
+              <select class="gr-input" id="goal-net" onchange="goalUpdate()" style="width:70px;flex:none;padding:8px 6px;cursor:pointer" title="Net = ce que vous touchez réellement, impôt déduit. C'est presque toujours ce qu'on a en tête quand on se fixe un revenu cible.">
+                <option value="net" ${(prefs.goalNet ?? 'net') === 'net' ? 'selected' : ''}>net</option>
+                <option value="brut" ${(prefs.goalNet ?? 'net') === 'brut' ? 'selected' : ''}>brut</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <div class="gr-label">Rendement mensuel moy. (%)</div>
+            <input class="gr-input" type="number" id="goal-yield" value="${defaultYield}" min="0" max="100" step="0.1" oninput="syncYield('goal-yield');growthUpdate();goalUpdate()">
+          </div>
         </div>
 
         <div style="background:var(--card-surface);border:1px solid var(--card-border);border-radius:10px;padding:16px;margin-top:16px">
@@ -2793,41 +2837,98 @@ function growthSetHorizonSlider(years) {
   growthUpdate();
 }
 
+// Projection mensuelle avec impôt prélevé UNE FOIS PAR AN.
+// La plupart des régimes taxent annuellement : déduire l'impôt chaque mois sous-estimerait
+// le capital, puisqu'en réalité cet argent travaille jusqu'à l'échéance fiscale. L'écart
+// atteint ~9 % sur 30 ans à 1,5 %/mois et 30 % d'imposition — loin d'être anecdotique.
+// Avec taxPct = 0, la formule redonne exactement l'ancienne.
+function growthSeries(capital, yieldPct, reinvest, deposit, taxPct, months) {
+  const serie = [capital];
+  let cap = capital, taxDue = 0, taxPaid = 0;
+  for (let i = 1; i <= months; i++) {
+    const brut = cap * yieldPct / 100;
+    taxDue += brut * taxPct / 100;
+    cap += brut * (reinvest / 100) + deposit;
+    // L'impôt porte sur le BRUT encaissé, qu'il ait été réinvesti ou retiré : il sort donc
+    // du capital dans tous les cas. Solde également en fin d'horizon s'il reste un reliquat.
+    if (i % 12 === 0 || i === months) { cap -= taxDue; taxPaid += taxDue; taxDue = 0; }
+    serie.push(cap);
+  }
+  return { serie, taxPaid };
+}
+
 function growthUpdate() {
   const capital  = parseFloat(document.getElementById('g-capital')?.value)  || 0;
   const yieldPct = parseFloat(document.getElementById('g-yield')?.value)    || 0;
   const reinvest = parseFloat(document.getElementById('g-reinvest')?.value) ?? 100;
   const deposit  = parseFloat(document.getElementById('g-deposit')?.value)  || 0;
+  const taxPct   = Math.min(99, parseFloat(document.getElementById('g-tax')?.value) || 0);
   const months   = window._growthHorizon || 12;
 
-  // compound = capital with reinvestment slider applied (grows if reinvest > 0)
-  // linear   = capital with 0% reinvestment (flat reference line — gains withdrawn each month)
-  const compound = [capital], linear = [capital];
-  let compCap = capital;
-  for (let i = 1; i <= months; i++) {
-    compCap = compCap + compCap * yieldPct / 100 * (reinvest / 100) + deposit;
-    compound.push(compCap);
-    linear.push(capital + deposit * i);
+  // compound = capital avec le curseur de réinvestissement appliqué
+  // linear   = référence à 0 % de réinvestissement (gains retirés chaque mois)
+  const { serie: compound, taxPaid } = growthSeries(capital, yieldPct, reinvest, deposit, taxPct, months);
+  const linear = [capital];
+  for (let i = 1; i <= months; i++) linear.push(capital + deposit * i);
+
+  // Bande de scénarios : même modèle joué à ± un écart-type des mois réellement vécus.
+  // Ce n'est PAS un intervalle de confiance, seulement deux trajectoires alternatives —
+  // une courbe lisse laisse croire à une régularité que la vente d'options n'a jamais.
+  const sigma = window._growthSigma;
+  let band = null;
+  if (sigma != null && sigma > 0.01 && yieldPct > 0) {
+    band = {
+      hi: growthSeries(capital, yieldPct + sigma, reinvest, deposit, taxPct, months).serie,
+      lo: growthSeries(capital, Math.max(0, yieldPct - sigma), reinvest, deposit, taxPct, months).serie,
+    };
   }
 
   const fmtK = v => v >= 1e6 ? ccySym()+(v/1e6).toFixed(2)+'M' : v >= 1e3 ? ccySym()+(v/1e3).toFixed(1)+'k' : ccySym()+Math.round(v).toLocaleString('en-US');
   const el = id => document.getElementById(id);
   if (el('g-final')) el('g-final').textContent = fmtK(compound[months]);
 
-  // Primes mensuelles à terme = rendement mensuel moyen × capital final projeté
+  // Primes à terme affichées NETTES : c'est ce dont on dispose réellement.
   if (el('g-premium-val')) {
-    const monthlyPremium = compound[months] * yieldPct / 100;
-    el('g-premium-val').textContent = `≈ ${ccySym()}${Math.round(monthlyPremium).toLocaleString('en-US')}`;
+    const net = compound[months] * yieldPct / 100 * (1 - taxPct / 100);
+    el('g-premium-val').textContent = `≈ ${ccySym()}${Math.round(net).toLocaleString('en-US')}`;
   }
+  if (el('g-premium-lbl')) el('g-premium-lbl').textContent = taxPct > 0 ? 'Primes nettes / mois · à terme' : 'Primes / mois · à terme';
+  if (el('g-tax-total')) el('g-tax-total').textContent = taxPct > 0 ? fmtK(taxPaid) : '—';
 
+  growthSavePrefs();
   const wrap = el('g-chart-wrap');
-  if (wrap) wrap.innerHTML = growthSVG(compound, linear, months);
+  if (wrap) wrap.innerHTML = growthSVG(compound, linear, months, band);
 }
 
-function growthSVG(compound, linear, months) {
+// ── Préférences du projecteur (les saisies survivent d'une visite à l'autre)
+const GROWTH_PREFS_KEY = 'olt_growth_prefs';
+function growthLoadPrefs() {
+  try { return JSON.parse(localStorage.getItem(GROWTH_PREFS_KEY)) || {}; } catch { return {}; }
+}
+function growthSavePrefs() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value : undefined; };
+  const num = id => { const x = parseFloat(v(id)); return Number.isFinite(x) ? x : undefined; };
+  try {
+    localStorage.setItem(GROWTH_PREFS_KEY, JSON.stringify({
+      yieldPct: num('g-yield'), reinvest: num('g-reinvest'), deposit: num('g-deposit'),
+      taxPct: num('g-tax'), horizon: window._growthHorizon,
+      goalRevenue: num('goal-revenue'), goalNet: v('goal-net'),
+    }));
+  } catch {}
+}
+// Réaligne le rendement sur la moyenne réelle du membre (lien sous le champ).
+function growthUseReal() {
+  const r = window._growthRealYield;
+  if (r == null) return;
+  const el = document.getElementById('g-yield');
+  if (el) { el.value = (Math.round(r * 100) / 100); syncYield('g-yield'); growthUpdate(); goalUpdate(); }
+}
+
+function growthSVG(compound, linear, months, band) {
   const W=460, H=165, pL=56, pR=12, pT=12, pB=28;
   const plotW = W-pL-pR, plotH = H-pT-pB;
-  const allVals = [...compound, ...linear];
+  // La bande entre dans le calcul d'échelle, sinon elle sortirait du cadre.
+  const allVals = [...compound, ...linear, ...(band ? [...band.hi, ...band.lo] : [])];
   const maxV = Math.max(...allVals)*1.04, minV = Math.min(...allVals)*0.97;
   const range = maxV - minV || 1;
   const xS = i => pL + (i/months)*plotW;
@@ -2844,8 +2945,13 @@ function growthSVG(compound, linear, months) {
     const lbl = i===0?'M0':i%12===0?'A'+(i/12):'M'+i;
     return `<text x="${xS(i).toFixed(1)}" y="${H-pB+14}" text-anchor="middle" font-size="9" fill="var(--c-muted)" font-family="DM Mono,monospace">${lbl}</text>`;
   }).join('');
+  // Aire fermée entre la trajectoire haute et la basse
+  const bandPath = band
+    ? path(band.hi) + ' ' + band.lo.map((v, i) => (i === 0 ? 'L' : 'L') + xS(months - i).toFixed(1) + ',' + yS(band.lo[months - i]).toFixed(1)).join(' ') + ' Z'
+    : '';
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
     ${grid}${xLbls}
+    ${band ? `<path d="${bandPath}" fill="rgba(0,229,204,0.10)" stroke="none"/>` : ''}
     <path d="${path(linear)}" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="5,4"/>
     <path d="${path(compound)}" fill="none" stroke="#00e5cc" stroke-width="2"/>
     <circle cx="${xS(months).toFixed(1)}" cy="${yS(compound[months]).toFixed(1)}" r="3" fill="#00e5cc"/>
@@ -2866,7 +2972,13 @@ function goalUpdate() {
     if (el('goal-months'))      el('goal-months').textContent      = '—';
     return;
   }
-  const capitalReq = revenue / (yieldPct/100);
+  // Un revenu cible est presque toujours pensé NET. Sans cette conversion, l'outil
+  // sous-estimait lourdement le capital requis : 3 000 net à 1,5 %/mois et 30 % d'impôt,
+  // c'est 285 714 de capital et non 200 000 — 43 % d'écart sur LA décision structurante.
+  const taxPct  = Math.min(99, parseFloat(document.getElementById('g-tax')?.value) || 0);
+  const wantNet = (document.getElementById('goal-net')?.value || 'net') === 'net';
+  const brutCible = wantNet ? revenue / (1 - taxPct/100) : revenue;
+  const capitalReq = brutCible / (yieldPct/100);
   if (el('goal-capital-req')) el('goal-capital-req').textContent = fmtK(capitalReq);
 
   const diff = capitalReq - capital;
@@ -3121,6 +3233,43 @@ function renderMonthly() {
   }
 }
 
+// ── Capital au 1er d'un mois donné : dépôts effectués AVANT ce mois + primes nettes
+// encaissées avant lui. Renvoie { computed, effective, custom }.
+//   computed  = valeur calculée
+//   effective = valeur retenue (l'override manuel du rapport mensuel prime)
+// Les dépôts privilégient la ventilation MENSUELLE `_depositsM_YYYY-MM` ; repli sur les
+// totaux ANNUELS `_deposits_YYYY` pour les années qui n'en ont pas.
+// Utilisé par le rapport mensuel ET par le projecteur de croissance : c'est ce qui garantit
+// qu'un rendement mensuel affiché quelque part vaut la même chose partout ailleurs.
+function oltMonthCapital(m) {
+  const monthStart = `${m}-01`;
+  const yM = m.slice(0, 4);
+  const monthlyYears = new Set(
+    Object.keys(accountKPI)
+      .filter(k => k.startsWith('_depositsM_'))
+      .map(k => k.replace('_depositsM_', '').slice(0, 4))
+  );
+  let deposits = 0;
+  Object.keys(accountKPI).forEach(k => {
+    if (k.startsWith('_depositsM_') && k.replace('_depositsM_', '') < m) deposits += accountKPI[k];
+  });
+  Object.keys(accountKPI).forEach(k => {
+    if (!k.startsWith('_deposits_')) return;
+    const y = k.replace('_deposits_', '');
+    if (!monthlyYears.has(y) && y <= yM) deposits += accountKPI[k];
+  });
+  const premiumsBefore = transactions
+    .filter(t => t.date < monthStart)
+    .reduce((s, t) => s + txNet(t), 0);
+  const computed = deposits + premiumsBefore;
+  const override = localStorage.getItem('olt_cap_override_' + m.replace(/-/g, ''));
+  return {
+    computed,
+    effective: override !== null ? parseFloat(override) : computed,
+    custom: override !== null,
+  };
+}
+
 // ── Monthly Report renderer
 function renderMonthlyReport(months) {
   const container = document.getElementById('monthly-report-container');
@@ -3193,37 +3342,14 @@ function renderMonthlyReport(months) {
     }
   });
 
-  // Monthly return: monthNet / (deposits up to year N + premiums collected before month N)
+  // Capital au 1er du mois — calcul factorisé (voir oltMonthCapital), partagé avec le
+  // projecteur de croissance pour que les deux écrans ne puissent pas diverger.
   const monthStart = `${m}-01`;
-  // Dépôts effectués AVANT le mois en cours (mois en cours exclu).
-  // Préfère la ventilation mensuelle `_depositsM_YYYY-MM` (précise) ; repli sur les
-  // totaux annuels `_deposits_YYYY` pour les données importées avant ce correctif.
-  const yM = m.slice(0, 4);
-  // Années disposant de buckets MENSUELS (XML YTD) → comptées au mois près (précis).
-  const monthlyYears = new Set(
-    Object.keys(accountKPI)
-      .filter(k => k.startsWith('_depositsM_'))
-      .map(k => k.replace('_depositsM_', '').slice(0, 4))
-  );
-  let depositsUpToMonth = 0;
-  // XML : buckets mensuels strictement AVANT le mois M (mois en cours exclu)
-  Object.keys(accountKPI).forEach(k => {
-    if (k.startsWith('_depositsM_') && k.replace('_depositsM_', '') < m) depositsUpToMonth += accountKPI[k];
-  });
-  // CSV : total ANNUEL des années sans données mensuelles, jusqu'à l'année de M incluse
-  Object.keys(accountKPI).forEach(k => {
-    if (!k.startsWith('_deposits_')) return;
-    const y = k.replace('_deposits_', '');
-    if (!monthlyYears.has(y) && y <= yM) depositsUpToMonth += accountKPI[k];
-  });
-  const premiumsBeforeMonth = transactions
-    .filter(t => t.date < monthStart)
-    .reduce((s, t) => s + txNet(t), 0);
-  const capitalAtMonthStart = depositsUpToMonth + premiumsBeforeMonth;
+  const _cap = oltMonthCapital(m);
+  const capitalAtMonthStart = _cap.computed;
+  const effectiveCapital    = _cap.effective;
+  const isCustomCapital     = _cap.custom;
   const mKey = m.replace(/-/g, '');
-  const capOverride = localStorage.getItem('olt_cap_override_' + mKey);
-  const effectiveCapital = capOverride !== null ? parseFloat(capOverride) : capitalAtMonthStart;
-  const isCustomCapital  = capOverride !== null;
   const monthlyReturn = effectiveCapital > 0 && perfNet !== 0 ? (perfNet / effectiveCapital) * 100 : null;
 
   const isCurrentMonth = m === new Date().toISOString().slice(0,7);
