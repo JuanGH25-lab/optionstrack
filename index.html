@@ -4131,7 +4131,9 @@ function renderEquities() {
   const top     = rows[0];
   const topPct  = top && totalValue !== 0 ? (top.valueBase / totalValue) * 100 : 0;
 
-  const pnlColor = v => v > 0 ? '#00e5cc' : v < 0 ? 'var(--red)' : 'var(--c-muted)';
+  // Vert franc pour les gains : le teal #00e5cc est reserve a l'identite (tickers, PRU).
+  // Le rouge des pertes est inchange — cette couleur porte du sens, pas du style.
+  const pnlColor = v => v > 0 ? '#2ecc71' : v < 0 ? 'var(--red)' : 'var(--c-muted)';
   const sign = v => v > 0 ? '+' : '';
 
   // ── Onglet P&L réalisé — événements de clôture, fills partiels regroupés par ordre,
@@ -4455,7 +4457,7 @@ function renderEquities() {
             <td style="font-size:11px;color:var(--c-muted);max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
             <td class="mono" style="text-align:right;color:${r.qty < 0 ? 'var(--red)' : 'var(--c-text)'}">${r.qty}</td>
             ${covHtml}
-            <td class="mono neu" style="text-align:right" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
+            <td class="mono" style="text-align:right;color:#00e5cc" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
             <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${prem.sum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
             <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
             <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? `<div style="color:var(--text);font-size:10px;font-weight:400;margin-top:1px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</div>` : ''}</td>
