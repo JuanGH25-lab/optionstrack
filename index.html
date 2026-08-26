@@ -2994,9 +2994,29 @@ function renderMonthly() {
       .monthly-table tbody td { border-bottom:1px solid var(--card-bg); padding:5px 4px; vertical-align:middle; }
       .monthly-table tbody td:first-child { padding-left:16px; }
       .monthly-table tbody td:last-child  { padding-right:16px; text-align:right; }
-      .monthly-table tfoot td { padding:8px 4px; border-top:1px solid var(--card-border); }
-      .monthly-table tfoot td:first-child { padding-left:16px; }
-      .monthly-table tfoot td:last-child  { padding-right:16px; text-align:right; }
+      /* Ligne TOTAL : désormais en TÊTE du tableau (voir le markup). La bordure passe
+         donc en bas, pour la séparer des lignes de tickers qui la suivent. */
+      .monthly-table .m-total-row td { padding:8px 4px; border-bottom:2px solid var(--card-border); background:var(--page-bg); }
+      .monthly-table .m-total-row td:first-child { padding-left:16px; }
+      .monthly-table .m-total-row td:last-child  { padding-right:16px; text-align:right; }
+      /* ── Colonne TICKER figée pendant le défilement horizontal.
+         Chaque première cellule doit porter un fond OPAQUE : sans lui, les colonnes de
+         mois défileraient visiblement dessous. D'où un fond par section, le thead et la
+         ligne TOTAL n'ayant pas le même que le corps du tableau. */
+      .monthly-table thead th:first-child,
+      .monthly-table .m-total-row td:first-child,
+      .monthly-table tbody td:first-child {
+        position:sticky; left:0; z-index:2;
+        box-shadow:1px 0 0 var(--card-border);
+      }
+      .monthly-table thead th:first-child        { z-index:3; background:var(--page-bg); }
+      .monthly-table .m-total-row td:first-child { z-index:3; background:var(--page-bg); }
+      .monthly-table tbody td:first-child        { background:var(--card-surface); }
+      /* Le survol teinte la ligne : on superpose la même teinte SUR le fond opaque,
+         sinon la cellule figée redeviendrait translucide au passage de la souris. */
+      .monthly-table tbody tr:hover td:first-child {
+        background:linear-gradient(rgba(255,255,255,0.015),rgba(255,255,255,0.015)), var(--card-surface);
+      }
       .m-tick {
         display:inline-flex;align-items:center;justify-content:center;
         background:var(--tick-bg);border:1px solid var(--card-border2);
@@ -3057,24 +3077,7 @@ function renderMonthly() {
                 ${months.map(m => `<th style="min-width:90px;text-align:center">${monthLabel(m).toUpperCase()}</th>`).join('')}
                 <th style="text-align:right;padding-right:20px;min-width:110px">TOTAL</th>
               </tr>
-            </thead>
-            <tbody>
-              ${tickers.map(t => `
-                <tr>
-                  <td style="padding:7px 8px 7px 16px">
-                    <span class="m-tick ${t.currency==='EUR'?'eur':''}">${t.ticker}</span>
-                    <span class="m-trades">${t.trades}m</span>
-                  </td>
-                  ${months.map(m => cell(t.months[m] || 0, m)).join('')}
-                  <td style="padding-right:20px">
-                    <span class="${t.total>=0?'m-total-pos':'m-total-neg'}">
-                      ${t.total >= 0 ? '+' : ''}${ccySym(BASE_CCY)}${Math.abs(t.total).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
-                    </span>
-                  </td>
-                </tr>`).join('')}
-            </tbody>
-            <tfoot>
-              <tr style="background:var(--page-bg)">
+              <tr class="m-total-row">
                 <td style="padding:10px 8px 10px 16px;font-size:11px;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px">TOTAL</td>
                 ${months.map(m => {
                   const v = monthTotals[m] || 0;
@@ -3090,7 +3093,22 @@ function renderMonthly() {
                   </span>
                 </td>
               </tr>
-            </tfoot>
+            </thead>
+            <tbody>
+              ${tickers.map(t => `
+                <tr>
+                  <td style="padding:7px 8px 7px 16px">
+                    <span class="m-tick ${t.currency==='EUR'?'eur':''}">${t.ticker}</span>
+                    <span class="m-trades" title="${t.trades} trade${t.trades > 1 ? 's' : ''} sur ${t.ticker} depuis le début de l'historique">${t.trades}</span>
+                  </td>
+                  ${months.map(m => cell(t.months[m] || 0, m)).join('')}
+                  <td style="padding-right:20px">
+                    <span class="${t.total>=0?'m-total-pos':'m-total-neg'}">
+                      ${t.total >= 0 ? '+' : ''}${ccySym(BASE_CCY)}${Math.abs(t.total).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                    </span>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
           </table>
         </div>
       </div>
