@@ -1099,14 +1099,14 @@ function buildChart(tf) {
           pointBorderColor: 'var(--card-surface)', pointBorderWidth: 2,
           pointHoverRadius: 6, pointHoverBackgroundColor: '#1f6feb',
           tension: 0.4, fill: true, yAxisID: 'yLeft',
-          spanGaps: true, hidden: hiddenSeries.has('cum'), order: 1,
+          spanGaps: true, hidden: hiddenSeries.has('cum'), order: 1, _key: 'cum',
         },
         {
           type: 'bar', label: 'Primes options',
           data: pts.map(p => p.prem),
           backgroundColor: 'rgba(0,229,204,0.7)', borderColor: '#00e5cc',
           borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
-          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('prem'), order: 2,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('prem'), order: 2, _key: 'prem',
         },
         {
           type: 'bar', label: 'P&L actions',
@@ -1114,28 +1114,28 @@ function buildChart(tf) {
           backgroundColor: pts.map(p => p.stk >= 0 ? 'rgba(46,204,113,0.7)' : 'rgba(248,81,73,0.7)'),
           borderColor:     pts.map(p => p.stk >= 0 ? '#2ecc71' : '#f85149'),
           borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
-          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('stk'), order: 2,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('stk'), order: 2, _key: 'stk',
         },
         {
           type: 'bar', label: 'Dividendes nets',
           data: pts.map(p => p.div),
           backgroundColor: 'rgba(227,179,65,0.75)', borderColor: '#e3b341',
           borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
-          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('div'), order: 2,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('div'), order: 2, _key: 'div',
         },
         {
           type: 'bar', label: 'Intérêts',
           data: pts.map(p => p.int),
           backgroundColor: 'rgba(31,111,235,0.7)', borderColor: '#1f6feb',
           borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
-          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('int'), order: 2,
+          stack: 'rev', yAxisID: 'yRight', hidden: hiddenSeries.has('int'), order: 2, _key: 'int',
         },
         {
           type: 'bar', label: 'Dépôts',
           data: pts.map(p => p.dep),
           backgroundColor: depFill, borderColor: depColor,
           borderWidth: 1, borderRadius: 4, maxBarThickness: 26,
-          stack: 'dep', yAxisID: 'yLeft', hidden: hiddenSeries.has('dep'), order: 3,
+          stack: 'dep', yAxisID: 'yLeft', hidden: hiddenSeries.has('dep'), order: 3, _key: 'dep',
         },
       ]
     },
@@ -1194,9 +1194,11 @@ function toggleSeries(key, el) {
   if(hiddenSeries.has(key)) hiddenSeries.delete(key); else hiddenSeries.add(key);
   el.style.opacity = hiddenSeries.has(key) ? '0.35' : '1';
   if (!mainChart) return;
-  const idx = {cum:0,prem:1,stk:2,div:3,dep:4}[key];
-  if (idx === undefined) return;
-  mainChart.data.datasets[idx].hidden = hiddenSeries.has(key);
+  // Recherche par CLÉ et non par index : insérer une série en milieu de liste ne peut
+  // plus décaler les boutons de la légende.
+  const ds = mainChart.data.datasets.find(d => d._key === key);
+  if (!ds) return;
+  ds.hidden = hiddenSeries.has(key);
   mainChart.update();
 }
 
