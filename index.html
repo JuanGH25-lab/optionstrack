@@ -838,6 +838,18 @@ function fmtWithFx(t) {
   return `${fmt(netBase)} <span style="color:var(--text);font-size:10px">(${netOrig >= 0 ? '' : '-'}${sym}${Math.abs(netOrig).toFixed(2)})</span>`;
 }
 
+// Montant en devise d'origine placé SOUS la valeur convertie, et non à côté.
+//
+// En ligne, « $221.88 (HKD 1740.00) » double la largeur de la colonne : les valeurs sans
+// devise étrangère se retrouvent poussées, et les chiffres ne s'alignent plus d'une ligne
+// à l'autre. La page Actions & ETF avait déjà tranché ainsi — on s'aligne dessus.
+//
+// Le signe reste porté par la valeur convertie seule : « -$3.06 (HKD 24.00) » se lit sans
+// ambiguïté, et un second moins alourdirait la ligne secondaire.
+function fxSub(sym, amount) {
+  return `<div style="color:var(--text);font-size:10px;font-weight:400;margin-top:1px;white-space:nowrap">(${sym}${Math.abs(amount).toFixed(2)})</div>`;
+}
+
 // ── State
 let mainChart = null, hiddenSeries = new Set(), currentTf = 'ALL';
 let currentYear = 'ALL';
@@ -2200,6 +2212,143 @@ function renderStocks() {
 // ── Ranking
 let rankSortCol = 'premium', rankSortDir = 1;
 
+// Reconstitue les POSITIONS d'options, roulements traversés.
+//
+// Une position roulée n'est pas une suite de trades indépendants : c'est une seule
+// position défendue dans le temps. La juger maillon par maillon fausse tout — un rachat
+// de défense apparaît en perte alors qu'il achète la suite, et la vente qui le finance
+// apparaît en gain alors qu'elle n'a fait que rembourser. Seul le net FINAL a un sens.
+//
+// On ne suit PAS un chemin vente → rachat → vente : les quantités ne se correspondent pas
+// toujours (rachat de 2 contrats couvrant un short de 1 plus un roulement partiel, plusieurs
+// séries restructurées d'un bloc en quelques minutes…). Un parcours séquentiel coupe alors
+// la position au mauvais endroit et fabrique des pertes qui n'existent pas.
+//
+// À la place on regroupe par composantes connexes, avec deux liens :
+//
+//   1. MÊME SÉRIE — même sous-jacent, type, strike et échéance. Une échéance ne se
+//      représente jamais deux fois : toutes les jambes d'une série sont donc, par
+//      construction, le même emplacement de position. Quantités incluses, sans avoir
+//      à les apparier.
+//
+//   2. MÊME ROULEMENT — un rachat et une vente du même jour sur le même sous-jacent et
+//      le même type, à ±60 minutes (l'appariement déjà utilisé pour la colonne Rendement).
+//      Rouler, c'est fermer une série et en ouvrir une autre d'un seul geste : les deux
+//      séries appartiennent à la même position.
+//
+// Une restructuration groupée fusionne donc en une seule chaîne, ce qui est exactement sa
+// nature économique.
+//
+// Issues :
+//   'assigned' dénouée par assignation                    → NON jugée
+//   'open'     une jambe court toujours                   → NON jugée
+//   'resolved' entièrement dénouée (rachat et/ou terme)   → jugée sur son net
+//
+// L'assignation est volontairement exclue : c'est un dénouement, pas un résultat de la
+// jambe option. La prime a bien été encaissée (elle reste dans « Primes Nettes »), mais le
+// vrai P&L bascule sur l'action et se lit page Actions & ETF. La compter gagnante gonflerait
+// le taux, la compter perdante effacerait la prime.
+//
+// Travaille sur transactions COMPLET, jamais sur le filtre d'année : une chaîne ouverte en
+// octobre et dénouée en mars serait sinon coupée en deux. Le filtrage se fait ensuite sur la
+// date de DÉNOUEMENT (voir computeRankingStats).
+function computeChains() {
+  const toMin = s => {
+    const p = s.split(':');
+    if (p.length >= 2) return parseInt(p[0]) * 60 + parseInt(p[1]);
+    if (s.length >= 4) return parseInt(s.slice(0, 2)) * 60 + parseInt(s.slice(2, 4));
+    return NaN;
+  };
+  // On travaille sur les transactions BRUTES, pas sur groupFills : celui-ci fusionne les
+  // rachats d'une même journée en ignorant l'échéance (c'est voulu pour l'affichage, IBKR
+  // encodant parfois des échéances légèrement différentes entre fills partiels). Le groupe
+  // qui en sort ne porte donc qu'une échéance arbitraire — inutilisable pour identifier une
+  // série. Les fills partiels d'un même ordre se rejoignent de toute façon, puisqu'ils
+  // partagent exactement la même série.
+  //
+  // isExpiryStub écarte les rachats IBKR à $0 : une vente arrivée à terme n'a ainsi aucune
+  // jambe fantôme en face, et la chaîne se dénoue proprement.
+  const raw = transactions.filter(isRealTrade)
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+
+  // Le sens d'une SÉRIE se lit sur sa première jambe : vendue d'abord = position courte,
+  // achetée d'abord = position longue. Une échéance ne se représentant jamais deux fois,
+  // ce sens est stable pour toute la série.
+  const serieKey = t => normTicker(t.ticker) + '|' + t.type + '|' + t.strike + '|' + t.expiry;
+  const sens = {};
+  raw.forEach(t => { const k = serieKey(t); if (sens[k] === undefined) sens[k] = t.action; });
+
+  // Le taux de réussite mesure la VENTE de primes : on écarte ici, en amont de toute union,
+  // les séries ouvertes par un achat. Trois raisons de le faire à ce niveau et pas sur la
+  // chaîne finale :
+  //
+  //   • un call ou un put ACHETÉ (protection, directionnel) n'a rien à voir avec la
+  //     discipline d'un vendeur et fausserait le taux dans les deux sens ;
+  //   • quand une option LONGUE expire sans valeur, IBKR inscrit une vente à $0 en face.
+  //     isExpiryStub ne l'attrape pas (il ne vise que les rachats à $0), et cette fausse
+  //     vente suffirait à faire passer la position pour vendue ;
+  //   • surtout, la fenêtre de roulement ci-dessous ne sait pas distinguer un rachat de
+  //     CLÔTURE d'un achat d'OUVERTURE. Un put long acheté le jour où l'on vend un put
+  //     court happerait la vente dans sa composante, et entraînerait dehors une position
+  //     courte parfaitement valide.
+  //
+  // Effet de bord assumé : si la vente d'ouverture précède les relevés importés, la série
+  // paraît ouverte par un rachat et sort du calcul. C'est le bon réflexe — une position
+  // dont on ne voit que la fin ne peut pas être jugée.
+  const legs = raw.filter(t => sens[serieKey(t)] === 'SELL');
+
+  // ── Union-find
+  const parent = legs.map((_, i) => i);
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+
+  // ── Lien 1 : même série
+  const bySeries = {};
+  legs.forEach((t, i) => {
+    const k = serieKey(t);
+    if (bySeries[k] === undefined) bySeries[k] = i; else union(bySeries[k], i);
+  });
+
+  // ── Lien 2 : même roulement (rachat + vente simultanés)
+  const byDay = {};
+  legs.forEach((t, i) => {
+    const k = normTicker(t.ticker) + '|' + t.type + '|' + t.date;
+    (byDay[k] = byDay[k] || []).push(i);
+  });
+  Object.values(byDay).forEach(idx => {
+    idx.forEach(i => idx.forEach(j => {
+      const a = legs[i], b = legs[j];
+      if (a.action !== 'BUY' || b.action !== 'SELL') return;
+      // Horaire absent (saisie manuelle, certains CSV) → on s'en tient au même jour.
+      if (a.time && b.time && Math.abs(toMin(a.time) - toMin(b.time)) > 60) return;
+      union(i, j);
+    }));
+  });
+
+  // ── Composantes → chaînes
+  const groups = {};
+  legs.forEach((t, i) => { const r = find(i); (groups[r] = groups[r] || []).push(t); });
+
+  return Object.values(groups).map(members => {
+    members.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+    const sells = members.filter(t => t.action === 'SELL');
+    const outcome = members.some(t => t.assigned) ? 'assigned'
+                  : sells.some(t => t.status === 'Open') ? 'open'
+                  : 'resolved';
+    // Un roulement = un jour où la position a été à la fois rachetée et revendue.
+    const jours = new Set(members.filter(t => t.action === 'BUY').map(t => t.date));
+    const rolls = [...jours].filter(d => sells.some(s => s.date === d)).length;
+    return {
+      ticker: (sells[0] || members[0]).ticker,
+      currency: (sells[0] || members[0]).currency,
+      outcome, rolls, legs: members,
+      net: members.reduce((a, t) => a + txNet(t), 0),
+      openDate: members[0].date,
+      closeDate: members[members.length - 1].date,
+    };
+  });
+}
+
 function computeRankingStats() {
   const toMinCs = s => { const p = s.split(':'); if (p.length >= 2) return parseInt(p[0])*60+parseInt(p[1]); if (s.length >= 4) return parseInt(s.slice(0,2))*60+parseInt(s.slice(2,4)); return NaN; };
   const map = {};
@@ -2217,9 +2366,7 @@ function computeRankingStats() {
     if (t.status === 'Open') s.open++;
 
     if (t.action === 'SELL') {
-      // Win/loss
-      if (t.status === 'Expired') s.wins++;
-      else if (t.status === 'Closed') { txNet(t) >= 0 ? s.wins++ : s.losses++; }
+      // (le verdict gagnant/perdant se calcule plus bas, au niveau de la CHAÎNE)
 
       // DTE
       const dte = Math.round((new Date(t.expiry) - new Date(t.date)) / 86400000);
@@ -2246,6 +2393,20 @@ function computeRankingStats() {
         if (rollBuys.length > 0) s.rolls++;
       }
     }
+  });
+
+  // Une position = une issue. Roulée dix fois ou pas du tout, elle vaut UN verdict,
+  // rendu sur son net final. Les chaînes encore vivantes et celles dénouées par
+  // assignation ne sont pas jugées (voir computeChains).
+  //
+  // Le filtre d'année porte sur la date de DÉNOUEMENT : une position ouverte en 2024 et
+  // rachetée en 2025 compte dans 2025, l'année où son sort s'est décidé.
+  computeChains().forEach(c => {
+    if (c.outcome === 'open' || c.outcome === 'assigned') return;
+    if (currentYear !== 'ALL' && !c.closeDate.startsWith(currentYear)) return;
+    const s = map[c.ticker];
+    if (!s) return;
+    c.net >= 0 ? s.wins++ : s.losses++;
   });
   return Object.values(map);
 }
@@ -2391,7 +2552,7 @@ function renderRanking() {
               <th class="${rankSortCol==='ticker'?'active':''}" data-sort="ticker" style="width:110px;cursor:pointer">Ticker${arr('ticker')}</th>
               <th class="${rankSortCol==='premium'?'active':''}" data-sort="premium" style="width:130px;text-align:right">Primes Nettes${arr('premium')}</th>
               <th class="${rankSortCol==='yield'?'active':''}"   data-sort="yield"   style="width:120px;text-align:right">Rdt. net moy.${arr('yield')}</th>
-              <th class="${rankSortCol==='winrate'?'active':''}" data-sort="winrate" style="width:100px;text-align:center">Win rate${arr('winrate')}</th>
+              <th class="${rankSortCol==='winrate'?'active':''}" data-sort="winrate" style="width:100px;text-align:center" title="Part des positions dénouées avec un net positif. Une position roulée compte pour une seule, jugée sur son résultat final. Positions encore ouvertes et assignations exclues.">Win rate${arr('winrate')}</th>
               <th class="${rankSortCol==='trades'?'active':''}"  data-sort="trades"  style="width:70px;text-align:center">Trades${arr('trades')}</th>
               <th class="${rankSortCol==='rolls'?'active':''}"   data-sort="rolls"   style="width:70px;text-align:center">Roulements${arr('rolls')}</th>
               <th class="${rankSortCol==='dte'?'active':''}"     data-sort="dte"     style="width:90px;text-align:center">DTE moy.${arr('dte')}</th>
@@ -2719,6 +2880,9 @@ function renderGrowth() {
     : null;
   window._growthRealYield = realYield;
   window._growthSigma     = realSigma;
+  // Nombre de mois ayant réellement servi : l'infobulle de la bande l'annonce, pour qu'on
+  // sache sur quelle profondeur d'historique la régularité a été mesurée.
+  window._growthSigmaN    = _rates.length;
 
   const prefs = growthLoadPrefs();
   const defaultYield = prefs.yieldPct != null ? prefs.yieldPct
@@ -2911,9 +3075,14 @@ function growthUpdate() {
   const sigma = window._growthSigma;
   let band = null;
   if (sigma != null && sigma > 0.01 && yieldPct > 0) {
+    // Les taux voyagent avec les séries : growthSVG en a besoin pour l'infobulle, et les
+    // recalculer là-bas dupliquerait la règle du plancher à 0 %.
+    const loPct = Math.max(0, yieldPct - sigma);
     band = {
       hi: growthSeries(capital, yieldPct + sigma, reinvest, deposit, taxPct, months).serie,
-      lo: growthSeries(capital, Math.max(0, yieldPct - sigma), reinvest, deposit, taxPct, months).serie,
+      lo: growthSeries(capital, loPct, reinvest, deposit, taxPct, months).serie,
+      sigma, midPct: yieldPct, loPct, hiPct: yieldPct + sigma,
+      n: window._growthSigmaN || 12,
     };
   }
 
@@ -2958,6 +3127,76 @@ function growthUseReal() {
   if (el) { el.value = (Math.round(r * 100) / 100); syncYield('g-yield'); growthUpdate(); goalUpdate(); }
 }
 
+// ── Infobulle de la bande de régularité
+//
+// Le <title> natif du SVG mettait une seconde à apparaître et s'affichait au style du
+// système d'exploitation — police, fond blanc, coins carrés — en rupture avec le reste de
+// l'app. On le remplace par une infobulle maison : mêmes variables de thème que les cartes,
+// donc elle suit le clair/sombre, et un délai dix fois plus court.
+let _bandTipEl = null, _bandTipTimer = null;
+
+// Le contenu montre les chiffres DU MEMBRE avant d'expliquer la notion : on lit d'abord ses
+// trois taux, la définition ne sert qu'à ceux qui la cherchent.
+function bandTipHTML(b) {
+  const pct = v => v.toFixed(2) + ' %';
+  const cell = (lbl, val, col) => `<div style="flex:1;text-align:center">
+      <div style="font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--c-dim,#5b7590)">${lbl}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:${col};margin-top:3px">${pct(val)}</div>
+    </div>`;
+  return `<div style="font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#00e5cc">Zone de régularité</div>
+    <div style="font-size:11px;color:var(--c-muted,#7a9ab5);margin-top:3px">± 1 écart-type de vos ${b.n} derniers mois complets</div>
+    <div style="height:1px;background:var(--card-border2,#1e3045);margin:11px 0"></div>
+    <div style="display:flex;gap:6px;margin-bottom:11px">
+      ${cell('Bas', b.loPct, 'var(--c-text,#e6edf3)')}
+      ${cell('Votre moyenne', b.midPct, '#00e5cc')}
+      ${cell('Haut', b.hiPct, 'var(--c-text,#e6edf3)')}
+    </div>
+    <div style="font-size:11.5px;line-height:1.55">Un écart-type mesure l'écart <b>typique</b> entre un mois et votre moyenne. Les vôtres s'en écartent de <b style="font-family:'DM Mono',monospace;color:#00e5cc">${b.sigma.toFixed(2)} pt</b>.</div>
+    <div style="font-size:11.5px;line-height:1.55;margin-top:8px;color:var(--c-muted,#7a9ab5)">Bande étroite = mois réguliers, bande large = mois irréguliers. À moyenne égale, une bande large signale de l'incertitude — pas une promesse.</div>
+    <div style="font-size:11.5px;line-height:1.55;margin-top:8px;color:var(--c-muted,#7a9ab5)">Deux scénarios, pas des probabilités : chacun suppose le même écart répété chaque mois. La borne basse ne descend jamais sous 0 %.</div>`;
+}
+
+function bandTipShow(ev) {
+  if (!window._growthBandTip) return;
+  // Les coordonnées sont relevées tout de suite : l'événement ne survit pas au setTimeout.
+  const cx = ev.clientX, cy = ev.clientY;
+  clearTimeout(_bandTipTimer);
+  // 120 ms : assez pour ne pas clignoter quand on ne fait que traverser la bande.
+  _bandTipTimer = setTimeout(() => {
+    if (!_bandTipEl) {
+      _bandTipEl = document.createElement('div');
+      // Styles en ligne, pas en feuille globale : l'élément est créé à la volée sur <body>,
+      // hors de toute carte. La police est héritée du body, les couleurs viennent des mêmes
+      // variables que les cartes pour suivre le thème.
+      _bandTipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0;'
+        + 'transition:opacity .13s ease;max-width:330px;padding:13px 15px;border-radius:10px;'
+        + 'background:var(--card-bg,#111820);border:1px solid var(--card-border2,#1e3045);'
+        + 'box-shadow:0 10px 30px rgba(0,0,0,.55);color:var(--c-text,#e6edf3)';
+      document.body.appendChild(_bandTipEl);
+    }
+    _bandTipEl.innerHTML = window._growthBandTip;
+    _bandTipEl.style.opacity = '1';
+    bandTipMove({ clientX: cx, clientY: cy });
+  }, 120);
+}
+
+function bandTipMove(ev) {
+  if (!_bandTipEl || _bandTipEl.style.opacity !== '1') return;
+  // Bascule du côté opposé quand l'infobulle déborderait — sinon elle sort de l'écran sur
+  // les points hauts et à droite de la courbe, là où la bande est justement la plus large.
+  const m = 16, r = _bandTipEl.getBoundingClientRect();
+  let x = ev.clientX + m, y = ev.clientY + m;
+  if (x + r.width  > window.innerWidth  - 10) x = ev.clientX - r.width  - m;
+  if (y + r.height > window.innerHeight - 10) y = ev.clientY - r.height - m;
+  _bandTipEl.style.left = Math.max(10, x) + 'px';
+  _bandTipEl.style.top  = Math.max(10, y) + 'px';
+}
+
+function bandTipHide() {
+  clearTimeout(_bandTipTimer);
+  if (_bandTipEl) _bandTipEl.style.opacity = '0';
+}
+
 function growthSVG(compound, linear, months, band) {
   const W=460, H=165, pL=56, pR=12, pT=12, pB=28;
   const plotW = W-pL-pR, plotH = H-pT-pB;
@@ -2979,13 +3218,22 @@ function growthSVG(compound, linear, months, band) {
     const lbl = i===0?'M0':i%12===0?'A'+(i/12):'M'+i;
     return `<text x="${xS(i).toFixed(1)}" y="${H-pB+14}" text-anchor="middle" font-size="9" fill="var(--c-muted)" font-family="DM Mono,monospace">${lbl}</text>`;
   }).join('');
+  // Rien à l'écran n'expliquait cette bande, et un membre l'a spontanément prise pour un
+  // min/max de ses meilleurs et pires mois — la lecture la plus naturelle, et la fausse.
+  // On l'explique donc au survol, avec ses propres chiffres plutôt qu'en théorie. Au survol
+  // et non en légende fixe : la carte est déjà dense, et l'explication n'est utile qu'une fois.
+  // Le SVG est réécrit à chaque réglage : on dépose le contenu sur window plutôt que dans
+  // le balisage, pour que les gestionnaires de survol n'aient rien à ré-attacher.
+  const hasTip = !!(band && band.sigma != null);
+  window._growthBandTip = hasTip ? bandTipHTML(band) : null;
+
   // Aire fermée entre la trajectoire haute et la basse
   const bandPath = band
     ? path(band.hi) + ' ' + band.lo.map((v, i) => (i === 0 ? 'L' : 'L') + xS(months - i).toFixed(1) + ',' + yS(band.lo[months - i]).toFixed(1)).join(' ') + ' Z'
     : '';
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
     ${grid}${xLbls}
-    ${band ? `<path d="${bandPath}" fill="rgba(0,229,204,0.10)" stroke="none"/>` : ''}
+    ${band ? `<path d="${bandPath}" fill="rgba(0,229,204,0.10)" stroke="none"${hasTip ? ' style="cursor:help" onmouseenter="bandTipShow(event)" onmousemove="bandTipMove(event)" onmouseleave="bandTipHide()"' : ''}/>` : ''}
     <path d="${path(linear)}" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="5,4"/>
     <path d="${path(compound)}" fill="none" stroke="#00e5cc" stroke-width="2"/>
     <circle cx="${xS(months).toFixed(1)}" cy="${yS(compound[months]).toFixed(1)}" r="3" fill="#00e5cc"/>
@@ -4735,9 +4983,9 @@ function renderPositions() {
             <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--c-text)">${ccySym(t.currency)}${t.strike}${getMultiplier(t)!==100?`<span style="font-size:9px;color:#f0883e;margin-left:3px">×${getMultiplier(t)}</span>`:''}</td>
             <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--c-muted)">${t.expiry}</td>
             <td style="text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--c-text)">${t.qty}</td>
-            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:#00e5cc">${fmt(premBase)}${isFx?`<span style="color:var(--text);font-size:10px;margin-left:3px">(${sym}${Math.abs(premOrigAmt).toFixed(2)})</span>`:''}${t._trades && t._trades.length > 1 ? `<span style="color:var(--c-dim);font-size:9px;margin-left:3px">${t._trades.length}f</span>` : ''}</td>
-            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)">${feesBase!==0?fmt(feesBase)+(isFx?`<span style="color:var(--text);font-size:10px;margin-left:3px">(${sym}${Math.abs(feesOrigAmt).toFixed(2)})</span>`:''):'—'}</td>
-            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:${netPrem>=0?'#00e5cc':'#f85149'}">${fmt(netPrem)}${isFx?`<span style="color:var(--text);font-size:10px;margin-left:3px">(${sym}${Math.abs(netOrigAmt).toFixed(2)})</span>`:''}</td>
+            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:#00e5cc">${fmt(premBase)}${isFx?fxSub(sym, premOrigAmt):''}</td>
+            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)">${feesBase!==0?fmt(feesBase)+(isFx?fxSub(sym, feesOrigAmt):''):'—'}</td>
+            <td style="text-align:right;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:${netPrem>=0?'#00e5cc':'#f85149'}">${fmt(netPrem)}${isFx?fxSub(sym, netOrigAmt):''}</td>
             <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${annYieldColor}"${rollTooltip}>${rollBuys.length > 0 ? '<span style="font-size:10px;margin-right:3px;opacity:0.6">↺</span>' : ''}${annYield !== null ? annYield.toFixed(1) + '%' : '—'}</td>
             ${coursHtml}
             ${distHtml}
@@ -5372,6 +5620,30 @@ function saveAppData() {
 // Couvre les longs calls jamais clôturés (ex. renommage de ticker SENS→SENS1, ou
 // la réconciliation qui ne traite que les SELL) et toute position non réconciliée.
 // Idempotent : ne touche que les statuts "Open" déjà expirés.
+// Requalifie en « Clôturée » toute vente RACHETÉE que le statut disait « Expirée ».
+//
+// La réconciliation à l'import ne voit qu'un relevé à la fois : si la vente est dans le
+// relevé 2024 et son rachat dans celui de 2025, elle lui échappe. Ce rattrapage travaille
+// sur l'historique COMPLET après fusion, et corrige donc aussi les données déjà
+// enregistrées — sans exiger de ré-import.
+//
+// À lancer AVANT markExpiredOptions(), qui étiquetterait sinon « Expirée » toute vente
+// encore ouverte dont la date est passée.
+function reconcileRolledSells() {
+  transactions.forEach(t => {
+    if (t.action !== 'SELL' || t.assigned) return;
+    if (t.status !== 'Expired' && t.status !== 'Open') return;
+    // Le rachat doit être une clôture (status 'Closed') et POSTÉRIEUR à la vente : un
+    // achat d'ouverture sur la même série — cas d'un spread — ne doit pas la fermer.
+    const rachat = transactions.some(b =>
+      b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
+      normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
+      b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+    );
+    if (rachat) t.status = 'Closed';
+  });
+}
+
 function markExpiredOptions() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   transactions.forEach(t => {
@@ -5429,6 +5701,7 @@ function loadAppData() {
         b.strike === t.strike && b.expiry === t.expiry
       )) { t.status = 'Closed'; t.assigned = true; }
     });
+    reconcileRolledSells();
     // Marque expirée toute option ouverte dont la date d'expiration est passée
     markExpiredOptions();
     return transactions.length > 0;
@@ -6158,9 +6431,22 @@ function ibParseXML(xmlText) {
           normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
           b.strike === t.strike && b.expiry === t.expiry
         );
+        // Un RACHAT DE CLÔTURE ferme la vente — un roulement en est un. Sans cette
+        // vérification, le statut ne dépendait que de la date d'échéance : une position
+        // rachetée avant terme basculait en « Expirée » dès que sa date était passée.
+        // Conséquence au-delà de l'affichage : le taux de réussite compte les expirations
+        // comme des gains (voir computeRankingStats), un rachat à perte devenait donc un
+        // succès. Le code cherchait déjà un rachat par ASSIGNATION, jamais un rachat simple.
+        const closedByBuy = result.trades.some(b =>
+          b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
+          normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
+          b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+        );
         if (isAssignedSell) {
           t.status = 'Closed';
           t.assigned = true;
+        } else if (closedByBuy) {
+          t.status = 'Closed';
         } else {
           t.status = new Date(t.expiry) < today ? 'Expired' : 'Closed';
         }
@@ -6241,6 +6527,7 @@ function ibMergeData(parsed) {
   });
 
   // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
+  reconcileRolledSells();
   markExpiredOptions();
 
   // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED").
@@ -7916,9 +8203,22 @@ function ibParseCSV(csvText) {
         normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
         b.strike === t.strike && b.expiry === t.expiry
       );
+      // Un RACHAT DE CLÔTURE ferme la vente — un roulement en est un. Sans cette
+      // vérification, le statut ne dépendait que de la date d'échéance : une position
+      // rachetée avant terme basculait en « Expirée » dès que sa date était passée.
+      // Conséquence au-delà de l'affichage : le taux de réussite compte les expirations
+      // comme des gains (voir computeRankingStats), un rachat à perte devenait donc un
+      // succès. Le code cherchait déjà un rachat par ASSIGNATION, jamais un rachat simple.
+      const closedByBuy = result.trades.some(b =>
+        b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
+        normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
+        b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+      );
       if (isAssignedSell) {
         t.status = 'Closed';
         t.assigned = true;
+      } else if (closedByBuy) {
+        t.status = 'Closed';
       } else {
         t.status = new Date(t.expiry) < today ? 'Expired' : 'Closed';
       }
