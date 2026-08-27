@@ -1077,6 +1077,18 @@ function buildChart(tf) {
   const ctx = document.getElementById('mainChart').getContext('2d');
   if (ctx.canvas) { ctx.canvas.style.display = ''; const emp = ctx.canvas.parentElement?.querySelector('.chart-empty'); if(emp) emp.remove(); }
   if (mainChart) mainChart.destroy();
+  // Chart.js peint sur un <canvas> : le contexte 2D ne connaît PAS les variables CSS.
+  // Lui passer 'var(--card-surface)' est invalide et silencieusement ignoré — l'infobulle
+  // retombait sur le noir par défaut de Chart.js, d'où son illisibilité. On résout donc
+  // les tokens en valeurs concrètes ici, ce qui préserve au passage le support des thèmes.
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = {
+    panel:  cssVar('--card-bg')      || '#111820',
+    border: cssVar('--card-border2') || '#1e3045',
+    text:   cssVar('--c-text')       || '#e6edf3',
+    muted:  cssVar('--c-muted')      || '#7a9ab5',
+  };
+
   mainChart = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -1096,7 +1108,7 @@ function buildChart(tf) {
             return grad;
           },
           borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#1f6feb',
-          pointBorderColor: 'var(--card-surface)', pointBorderWidth: 2,
+          pointBorderColor: C.panel, pointBorderWidth: 2,
           pointHoverRadius: 6, pointHoverBackgroundColor: '#1f6feb',
           tension: 0.4, fill: true, yAxisID: 'yLeft',
           spanGaps: true, hidden: hiddenSeries.has('cum'), order: 1, _key: 'cum',
@@ -1145,13 +1157,18 @@ function buildChart(tf) {
       plugins: {
         legend: {display: false},
         tooltip: {
-          backgroundColor: 'var(--card-surface)',
-          borderColor: 'var(--card-border)', borderWidth: 1,
-          titleColor: 'var(--c-muted)', bodyColor: 'var(--c-text)',
+          backgroundColor: C.panel,
+          borderColor: C.border, borderWidth: 1,
+          titleColor: C.muted, bodyColor: C.text,
           padding: 12, cornerRadius: 8,
           titleFont: {family: 'DM Mono', size: 11},
           bodyFont:  {family: 'DM Mono', size: 12},
+          // Pastille ronde colorée + texte clair uniforme. Coloré par série, le texte
+          // devenait illisible sur certaines couleurs — le bleu des intérêts tombait sous
+          // le seuil de contraste. La pastille identifie la série, le texte reste lisible.
+          usePointStyle: true, boxWidth: 8, boxHeight: 8, boxPadding: 5,
           callbacks: {
+            labelTextColor: () => C.text,
             label: c => {
               if (c.parsed.y === 0 && c.dataset.type === 'bar') return null;
               // Montant EXACT : fmtK arrondit au millier (47.44 € s'affichait « €0.0k »,
@@ -1166,14 +1183,14 @@ function buildChart(tf) {
         x: {
           stacked: true, // empile les barres partageant le même `stack` (revenus vs dépôts)
           grid: {color: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)', lineWidth: 1},
-          border: {color: 'var(--card-border)'},
+          border: {color: C.border},
           ticks: {color: document.documentElement.classList.contains('light') ? '#64748b' : '#e6edf3', font: {family: 'DM Mono', size: 11}},
         },
         yLeft: {
           type: 'linear', position: 'left',
           min: leftMin, max: leftMax,
           grid: {color: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)', lineWidth: 1},
-          border: {color: 'var(--card-border)', dash: [4,4]},
+          border: {color: C.border, dash: [4,4]},
           // Labels négatifs masqués — la plage négative n'existe que pour aligner le zéro.
           ticks: {color: '#1f6feb', font: {family: 'DM Mono', size: 11}, callback: v => v < 0 ? '' : fmtK(v)},
         },
@@ -1181,7 +1198,7 @@ function buildChart(tf) {
           type: 'linear', position: 'right', stacked: true,
           min: rightMin, max: rightMax,
           grid: {display: false},
-          border: {color: 'var(--card-border)'},
+          border: {color: C.border},
           ticks: {color: '#2ecc71', font: {family: 'DM Mono', size: 11}, callback: v => fmtK(v)},
         },
       }
