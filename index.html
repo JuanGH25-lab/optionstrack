@@ -502,7 +502,7 @@ tbody tr:hover{background:var(--surface2);}
       Calculateur de rendement
     </div>
     <div class="nav-item" data-page="growth">
-      📈
+      <svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M0 0h1v15h15v1H0V0zm10 3.5a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-1 0V4.9l-3.613 4.417a.5.5 0 01-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 01-.808-.588l4-5.5a.5.5 0 01.758-.06l2.609 2.61L13.445 4H10.5a.5.5 0 01-.5-.5z"/></svg>
       Objectifs & Croissance
     </div>
     <div class="nav-section">Data</div>
@@ -2627,6 +2627,12 @@ function toggleMonthlyDividends(checked) {
   renderMonthlyReport();
 }
 
+// V2 — option "inclure les intérêts du mois" (préférence mémorisée)
+function toggleMonthlyInterest(checked) {
+  localStorage.setItem('olt_monthly_incl_int', checked ? '1' : '0');
+  renderMonthlyReport();
+}
+
 function editMonthlyCapital(mKey) {
   const capEl = document.getElementById('mcap-val-' + mKey);
   const rdtEl = document.getElementById('mcap-rdt-' + mKey);
@@ -2634,7 +2640,10 @@ function editMonthlyCapital(mKey) {
   if (!capEl) return;
 
   const computed  = parseFloat(capEl.dataset.computed || '0');
-  const monthNet  = parseFloat(capEl.dataset.monthnet || '0');
+  // Le recalcul doit porter sur la MÊME grandeur que l'affichage : auparavant il lisait les
+  // primes seules, si bien qu'éditer le capital avec « inclure les dividendes » coché
+  // renvoyait un rendement sur une autre base, jusqu'au prochain rendu complet.
+  const perfNet   = parseFloat(capEl.dataset.perfnet || '0');
   const stored    = localStorage.getItem('olt_cap_override_' + mKey);
   const current   = stored !== null ? parseFloat(stored) : computed;
 
@@ -2666,8 +2675,8 @@ function editMonthlyCapital(mKey) {
     const sym = {'USD':'$','EUR':'€','GBP':'£','HKD':'HK$'}[BASE_CCY] || '$';
     capEl.childNodes[0].textContent = sym + effective.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' ';
     // Recalculate rendement
-    if (rdtEl && effective > 0 && monthNet !== 0) {
-      const rdt = (monthNet / effective) * 100;
+    if (rdtEl && effective > 0 && perfNet !== 0) {
+      const rdt = (perfNet / effective) * 100;
       rdtEl.textContent = (rdt >= 0 ? '▲ ' : '▼ ') + Math.abs(rdt).toFixed(2) + '%';
       rdtEl.style.color = rdt >= 0 ? '#2ecc71' : '#f85149';
     }
@@ -3603,7 +3612,33 @@ function renderMonthlyReport(months) {
   const divNetMonth = stockDividends
     .filter(d => d.date.startsWith(m))
     .reduce((s, d) => s + (d.amountBase || 0), 0);
-  const perfNet = monthNet + (inclDiv ? divNetMonth : 0); // primes nettes (+ dividendes si option activée)
+  // ── V2 : intérêts du mois (option "inclure les intérêts dans la performance").
+  //
+  // Comptabilité de CAISSE, assumée : IBKR verse les intérêts de juillet début août, et on
+  // les compte en août — le mois où ils ont réellement touché le compte. Un rapport mensuel
+  // se lit comme un relevé bancaire, pas comme une comptabilité d'engagement, et c'est déjà
+  // la convention du graphe du tableau de bord (même source _interestM_).
+  //
+  // Les intérêts débiteurs (marge) sont négatifs dans cette même somme : ils se nettent donc
+  // d'eux-mêmes, on ne les isole pas.
+  const inclInt = localStorage.getItem('olt_monthly_incl_int') === '1';
+  // Une donnée ABSENTE et un zéro réel se ressemblent trop : afficher « +$0.00 » quand la
+  // ventilation n'existe pas laisse croire que le mois n'a rien rapporté, alors que le
+  // relevé n'a simplement pas été réimporté depuis que l'app produit ces montants.
+  const intRaw   = accountKPI['_interestM_' + m];
+  const intKnown = intRaw != null;
+  const intMonth = intKnown ? intRaw : 0;
+  // Distinction utile : aucune clé NULLE PART = relevé antérieur à la ventilation mensuelle,
+  // donc réimport à faire. Une seule clé manquante parmi d'autres est un mois sans intérêts,
+  // ce qui est parfaitement normal (compte récent, trésorerie faible) et n'appelle rien.
+  const intNeedsImport = !Object.keys(accountKPI).some(k => k.startsWith('_interestM_'));
+
+  const perfNet = monthNet + (inclDiv ? divNetMonth : 0) + (inclInt ? intMonth : 0);
+
+  // Libellés dérivés des deux options, pour ne pas énumérer quatre combinaisons à la main.
+  const perfParts  = ['PRIMES', ...(inclDiv ? ['DIVIDENDES'] : []), ...(inclInt ? ['INTÉRÊTS'] : [])];
+  const perfLabel  = perfParts.length === 1 ? 'PRIMES NETTES' : perfParts.join(' + ');
+  const perfLabelLc = perfLabel.toLowerCase();
 
   // Top 3 tickers
   const byTicker = {};
@@ -3645,6 +3680,11 @@ function renderMonthlyReport(months) {
           <input type="checkbox" onchange="toggleMonthlyDividends(this.checked)" ${inclDiv ? 'checked' : ''} style="accent-color:#00e5cc;width:15px;height:15px;cursor:pointer">
           Inclure les dividendes
         </label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--c-muted);cursor:pointer;user-select:none" title="Ajoute les intérêts crédités sur le compte durant ce mois. IBKR verse les intérêts d'une période au début du mois suivant : ceux de juillet apparaissent donc en août, le mois où ils ont réellement été encaissés. Intérêts débiteurs de marge déduits.">
+          <input type="checkbox" onchange="toggleMonthlyInterest(this.checked)" ${inclInt ? 'checked' : ''} style="accent-color:#00e5cc;width:15px;height:15px;cursor:pointer">
+          Inclure les intérêts
+        </label>
+        ${inclInt && intNeedsImport ? `<span style="font-size:11px;color:#f0883e;font-family:'DM Mono',monospace" title="Vos relevés ont été importés avant qu'OLT Tracker ne ventile les intérêts par mois. Les montants existent dans le relevé IBKR, mais pas encore dans vos données : réimportez-le (ou relancez la synchronisation Flex Query) pour les faire apparaître.">⚠ aucune donnée d'intérêts — réimportez votre relevé</span>` : ''}
         <select onchange="setMonthlyReportMonth(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--c-text);font-family:'DM Mono',monospace;cursor:pointer;outline:none">
           ${monthsDesc.map(mo => `<option value="${mo}" ${mo===m?'selected':''}>${monthLabel(mo)}</option>`).join('')}
         </select>
@@ -3664,9 +3704,9 @@ function renderMonthlyReport(months) {
               ${isCurrentMonth ? `<div style="font-size:11px;color:#f0883e;margin-top:4px;font-family:'DM Mono',monospace">⚠ Mois en cours — données partielles</div>` : ``}
             </div>
             <div style="text-align:right">
-              <div style="font-size:11px;color:#ffffff;margin-bottom:4px;font-weight:600;letter-spacing:0.8px">${inclDiv ? 'PRIMES + DIVIDENDES' : 'PRIMES NETTES'}</div>
+              <div style="font-size:11px;color:#ffffff;margin-bottom:4px;font-weight:600;letter-spacing:0.8px">${perfLabel}</div>
               <div style="font-size:32px;font-weight:800;font-family:'DM Mono',monospace;color:${perfNet>=0?'#2ecc71':'#f85149'}">${perfNet>=0?'+':''}${fmt(perfNet)}</div>
-              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Primes brutes ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}${inclDiv ? ` · Dividendes ${divNetMonth>=0?'+':''}${fmt(divNetMonth)}` : ''}</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Primes brutes ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}${inclDiv ? ` · Dividendes ${divNetMonth>=0?'+':''}${fmt(divNetMonth)}` : ''}${inclInt ? ` · Intérêts ${intKnown ? (intMonth>=0?'+':'') + fmt(intMonth) : '—'}` : ''}</div>
             </div>
           </div>
         </div>
@@ -3677,7 +3717,7 @@ function renderMonthlyReport(months) {
             <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Capital début de mois<br><span style="font-size:10px;font-weight:400;opacity:0.8">(dépôts + primes antérieures)</span></div>
             <div id="mcap-val-${mKey}"
                  data-computed="${capitalAtMonthStart}"
-                 data-monthnet="${monthNet}"
+                 data-perfnet="${perfNet}"
                  onclick="editMonthlyCapital('${mKey}')"
                  title="Cliquer pour modifier"
                  style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:var(--c-text);cursor:pointer;display:inline-flex;align-items:center;gap:6px">
@@ -3687,7 +3727,7 @@ function renderMonthlyReport(months) {
             <div id="mcap-sub-${mKey}" style="font-size:10px;color:${isCustomCapital?'#00e5cc':'var(--c-dim)'};margin-top:3px"${isCustomCapital ? ` title="Valeur saisie manuellement, figée : elle n'est plus recalculée aux imports suivants. Calcul automatique pour ce mois : ${fmt(capitalAtMonthStart)}. Pour revenir au calcul auto, cliquez sur le montant, videz le champ et validez."` : ''}>${isCustomCapital ? '✏ Capital personnalisé' : 'au 1er ' + monthLabel(m)}</div>
           </div>
           <div style="padding:16px 20px;border-right:1px solid var(--card-border)">
-            <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Rendement mensuel<br><span style="font-size:10px;font-weight:400;opacity:0.8">(${inclDiv ? 'primes + dividendes' : 'primes nettes'} / capital)</span></div>
+            <div style="font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px">Rendement mensuel<br><span style="font-size:10px;font-weight:400;opacity:0.8">(${perfLabelLc} / capital)</span></div>
             <div id="mcap-rdt-${mKey}" style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:${monthlyReturn !== null && monthlyReturn >= 0 ? '#2ecc71' : '#f85149'}">${monthlyReturn !== null ? (monthlyReturn >= 0 ? '▲ ' : '▼ ') + Math.abs(monthlyReturn).toFixed(2) + '%' : '—'}</div>
           </div>
           <div style="padding:16px 20px">
