@@ -2633,6 +2633,12 @@ function toggleMonthlyInterest(checked) {
   renderMonthlyReport();
 }
 
+// V2 — option "inclure le P&L réalisé des actions du mois" (préférence mémorisée)
+function toggleMonthlyPnl(checked) {
+  localStorage.setItem('olt_monthly_incl_pnl', checked ? '1' : '0');
+  renderMonthlyReport();
+}
+
 function editMonthlyCapital(mKey) {
   const capEl = document.getElementById('mcap-val-' + mKey);
   const rdtEl = document.getElementById('mcap-rdt-' + mKey);
@@ -3136,13 +3142,99 @@ function growthUseReal() {
   if (el) { el.value = (Math.round(r * 100) / 100); syncYield('g-yield'); growthUpdate(); goalUpdate(); }
 }
 
-// ── Infobulle de la bande de régularité
+// ── Infobulles OLT Tracker
 //
-// Le <title> natif du SVG mettait une seconde à apparaître et s'affichait au style du
-// système d'exploitation — police, fond blanc, coins carrés — en rupture avec le reste de
-// l'app. On le remplace par une infobulle maison : mêmes variables de thème que les cartes,
-// donc elle suit le clair/sombre, et un délai dix fois plus court.
-let _bandTipEl = null, _bandTipTimer = null;
+// L'infobulle native du navigateur — encadré blanc, police du système, coins carrés, une
+// seconde d'attente — jure avec le reste de l'app. Ce moteur la remplace PARTOUT : il
+// intercepte les attributs `title` au survol, les déplace vers `data-olt-tip` pour museler
+// la version native, et rend un panneau aux couleurs des cartes.
+//
+// Délégation sur `document`, et non des gestionnaires posés sur chaque élément : l'app
+// réécrit ses vues par innerHTML à chaque rendu, et de tels gestionnaires disparaîtraient au
+// premier redessin. Un élément recréé avec son `title` est simplement redépouillé au survol
+// suivant, sans qu'on ait rien à ré-attacher.
+//
+// Deux sources de contenu :
+//   • `title` / `data-olt-tip`  — texte simple, inséré en textContent (jamais en balisage)
+//   • `data-tip-rich="_maVar"`   — HTML riche lu sur window, pour nos propres panneaux
+//     (la bande de régularité et ses trois colonnes, qu'un `title` ne saurait pas porter)
+let _tipEl = null, _tipTimer = null, _tipHost = null;
+
+function oltTipPanel() {
+  if (_tipEl) return _tipEl;
+  _tipEl = document.createElement('div');
+  // Styles en ligne plutôt qu'en feuille globale : le panneau vit sur <body>, hors de toute
+  // carte, et doit s'afficher à l'identique quelle que soit la page rendue. Les couleurs
+  // viennent des mêmes variables que les cartes, donc il suit le thème clair/sombre.
+  _tipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0;'
+    + 'transition:opacity .13s ease;max-width:330px;padding:11px 14px;border-radius:10px;'
+    + 'background:var(--card-bg,#111820);border:1px solid var(--card-border2,#1e3045);'
+    + 'box-shadow:0 10px 30px rgba(0,0,0,.55);color:var(--c-text,#e6edf3);'
+    + 'font-size:12px;line-height:1.55';
+  document.body.appendChild(_tipEl);
+  return _tipEl;
+}
+
+function oltTipShow(content, x, y, rich) {
+  const el = oltTipPanel();
+  // Le texte d'un `title` est TOUJOURS inséré en textContent : il peut venir d'un nom de
+  // société ou d'une description de relevé, donc de données qu'on n'a pas écrites.
+  if (rich) el.innerHTML = content; else el.textContent = content;
+  // pre-line honore les retours à la ligne des titres qui en contiennent, sans empêcher le
+  // retour automatique. Nos panneaux riches gèrent leur propre mise en page.
+  el.style.whiteSpace = rich ? 'normal' : 'pre-line';
+  el.style.opacity = '1';
+  oltTipMove(x, y);
+}
+
+function oltTipMove(x, y) {
+  if (!_tipEl || _tipEl.style.opacity !== '1') return;
+  // Bascule du côté opposé quand le panneau déborderait — sans quoi il sort de l'écran près
+  // des bords, typiquement sur les dernières colonnes d'un tableau ou le haut d'un graphe.
+  const m = 16, r = _tipEl.getBoundingClientRect();
+  let nx = x + m, ny = y + m;
+  if (nx + r.width  > window.innerWidth  - 10) nx = x - r.width  - m;
+  if (ny + r.height > window.innerHeight - 10) ny = y - r.height - m;
+  _tipEl.style.left = Math.max(10, nx) + 'px';
+  _tipEl.style.top  = Math.max(10, ny) + 'px';
+}
+
+function oltTipHide() {
+  clearTimeout(_tipTimer);
+  _tipHost = null;
+  if (_tipEl) _tipEl.style.opacity = '0';
+}
+
+document.addEventListener('mouseover', e => {
+  const host = e.target.closest && e.target.closest('[title],[data-olt-tip],[data-tip-rich]');
+  if (host === _tipHost) return;
+  oltTipHide();
+  if (!host) return;
+  if (host.hasAttribute('title')) {
+    const t = host.getAttribute('title');
+    host.removeAttribute('title');            // museler la version native
+    if (!t.trim()) return;
+    host.dataset.oltTip = t;
+    // `title` sert aussi aux lecteurs d'écran : on ne le retire pas sans compensation.
+    if (!host.hasAttribute('aria-label')) host.setAttribute('aria-label', t);
+  }
+  const richVar = host.getAttribute('data-tip-rich');
+  const content = richVar ? window[richVar] : host.dataset.oltTip;
+  if (!content) return;
+  _tipHost = host;
+  const x = e.clientX, y = e.clientY;
+  // 110 ms : assez pour ne pas clignoter quand la souris ne fait que traverser un tableau.
+  _tipTimer = setTimeout(() => oltTipShow(content, x, y, !!richVar), 110);
+});
+
+document.addEventListener('mousemove', e => { if (_tipHost) oltTipMove(e.clientX, e.clientY); });
+document.addEventListener('mouseout', e => {
+  if (_tipHost && e.relatedTarget && _tipHost.contains(e.relatedTarget)) return;
+  oltTipHide();
+});
+// Un panneau resté affiché pendant un défilement ou un changement de vue serait orphelin.
+window.addEventListener('scroll', oltTipHide, true);
+document.addEventListener('click', oltTipHide, true);
 
 // Le contenu montre les chiffres DU MEMBRE avant d'expliquer la notion : on lit d'abord ses
 // trois taux, la définition ne sert qu'à ceux qui la cherchent.
@@ -3163,47 +3255,6 @@ function bandTipHTML(b) {
     <div style="font-size:11.5px;line-height:1.55">Un écart-type mesure l'écart <b>typique</b> entre un mois et votre moyenne. Les vôtres s'en écartent de <b style="font-family:'DM Mono',monospace;color:#00e5cc">${b.sigma.toFixed(2)} pt</b>.</div>
     <div style="font-size:11.5px;line-height:1.55;margin-top:8px;color:var(--c-muted,#7a9ab5)">Bande étroite = mois réguliers, bande large = mois irréguliers. À moyenne égale, une bande large signale de l'incertitude — pas une promesse.</div>
     <div style="font-size:11.5px;line-height:1.55;margin-top:8px;color:var(--c-muted,#7a9ab5)">Deux scénarios, pas des probabilités : chacun suppose le même écart répété chaque mois. La borne basse ne descend jamais sous 0 %.</div>`;
-}
-
-function bandTipShow(ev) {
-  if (!window._growthBandTip) return;
-  // Les coordonnées sont relevées tout de suite : l'événement ne survit pas au setTimeout.
-  const cx = ev.clientX, cy = ev.clientY;
-  clearTimeout(_bandTipTimer);
-  // 120 ms : assez pour ne pas clignoter quand on ne fait que traverser la bande.
-  _bandTipTimer = setTimeout(() => {
-    if (!_bandTipEl) {
-      _bandTipEl = document.createElement('div');
-      // Styles en ligne, pas en feuille globale : l'élément est créé à la volée sur <body>,
-      // hors de toute carte. La police est héritée du body, les couleurs viennent des mêmes
-      // variables que les cartes pour suivre le thème.
-      _bandTipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0;'
-        + 'transition:opacity .13s ease;max-width:330px;padding:13px 15px;border-radius:10px;'
-        + 'background:var(--card-bg,#111820);border:1px solid var(--card-border2,#1e3045);'
-        + 'box-shadow:0 10px 30px rgba(0,0,0,.55);color:var(--c-text,#e6edf3)';
-      document.body.appendChild(_bandTipEl);
-    }
-    _bandTipEl.innerHTML = window._growthBandTip;
-    _bandTipEl.style.opacity = '1';
-    bandTipMove({ clientX: cx, clientY: cy });
-  }, 120);
-}
-
-function bandTipMove(ev) {
-  if (!_bandTipEl || _bandTipEl.style.opacity !== '1') return;
-  // Bascule du côté opposé quand l'infobulle déborderait — sinon elle sort de l'écran sur
-  // les points hauts et à droite de la courbe, là où la bande est justement la plus large.
-  const m = 16, r = _bandTipEl.getBoundingClientRect();
-  let x = ev.clientX + m, y = ev.clientY + m;
-  if (x + r.width  > window.innerWidth  - 10) x = ev.clientX - r.width  - m;
-  if (y + r.height > window.innerHeight - 10) y = ev.clientY - r.height - m;
-  _bandTipEl.style.left = Math.max(10, x) + 'px';
-  _bandTipEl.style.top  = Math.max(10, y) + 'px';
-}
-
-function bandTipHide() {
-  clearTimeout(_bandTipTimer);
-  if (_bandTipEl) _bandTipEl.style.opacity = '0';
 }
 
 function growthSVG(compound, linear, months, band) {
@@ -3242,7 +3293,7 @@ function growthSVG(compound, linear, months, band) {
     : '';
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
     ${grid}${xLbls}
-    ${band ? `<path d="${bandPath}" fill="rgba(0,229,204,0.10)" stroke="none"${hasTip ? ' style="cursor:help" onmouseenter="bandTipShow(event)" onmousemove="bandTipMove(event)" onmouseleave="bandTipHide()"' : ''}/>` : ''}
+    ${band ? `<path d="${bandPath}" fill="rgba(0,229,204,0.10)" stroke="none"${hasTip ? ' style="cursor:help" data-tip-rich="_growthBandTip"' : ''}/>` : ''}
     <path d="${path(linear)}" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="5,4"/>
     <path d="${path(compound)}" fill="none" stroke="#00e5cc" stroke-width="2"/>
     <circle cx="${xS(months).toFixed(1)}" cy="${yS(compound[months]).toFixed(1)}" r="3" fill="#00e5cc"/>
@@ -3633,12 +3684,40 @@ function renderMonthlyReport(months) {
   // ce qui est parfaitement normal (compte récent, trésorerie faible) et n'appelle rien.
   const intNeedsImport = !Object.keys(accountKPI).some(k => k.startsWith('_interestM_'));
 
-  const perfNet = monthNet + (inclDiv ? divNetMonth : 0) + (inclInt ? intMonth : 0);
+  // ── V2 : P&L réalisé des ACTIONS sur le mois (option "inclure le P&L actions").
+  //
+  // Jambe action seule : les primes d'options sont déjà dans monthNet, les dividendes ont
+  // leur propre case. C'est ici qu'atterrit le résultat des assignations — une position
+  // assignée sort du taux de réussite des options, son sort se joue à la revente des titres.
+  //
+  // Réalisé uniquement : une moins-value latente n'a pas été encaissée, l'ajouter à une
+  // performance mensuelle mélangerait ce qui est acquis et ce qui ne l'est pas.
+  //
+  // Même filtre que la courbe du tableau de bord, pour que les deux ne divergent pas.
+  computeStockEconPnl(); // renseigne _econOk / _econPnl, non garantis à ce stade
+  const inclPnl = localStorage.getItem('olt_monthly_incl_pnl') === '1';
+  const pnlClotures = stockTrades.filter(t =>
+    (t.realizedPnl || (t._econOk && Math.abs(t._econPnl) > 0.005)) && t.date.startsWith(m));
+  const pnlKnown = pnlClotures.length > 0;
+  const pnlMonth = pnlClotures.reduce((s, t) => s + stockDispPnlBase(t), 0);
 
-  // Libellés dérivés des deux options, pour ne pas énumérer quatre combinaisons à la main.
-  const perfParts  = ['PRIMES', ...(inclDiv ? ['DIVIDENDES'] : []), ...(inclInt ? ['INTÉRÊTS'] : [])];
-  const perfLabel  = perfParts.length === 1 ? 'PRIMES NETTES' : perfParts.join(' + ');
+  const perfNet = monthNet + (inclDiv ? divNetMonth : 0) + (inclInt ? intMonth : 0) + (inclPnl ? pnlMonth : 0);
+
+  // Libellés dérivés des trois options, pour ne pas énumérer huit combinaisons à la main.
+  // Énumérer tout en clair déborderait de l'en-tête et de la cellule du rendement dès que
+  // trois options sont cochées : on garde la forme longue tant qu'elle tient, on abrège
+  // au-delà. Le détail chiffré juste dessous nomme de toute façon chaque composante.
+  const perfLong  = ['PRIMES', ...(inclDiv ? ['DIVIDENDES'] : []), ...(inclInt ? ['INTÉRÊTS'] : []), ...(inclPnl ? ['P&L ACTIONS'] : [])];
+  const perfCourt = ['PRIMES', ...(inclDiv ? ['DIV.'] : []),       ...(inclInt ? ['INT.'] : []),      ...(inclPnl ? ['P&L'] : [])];
+  const perfLabel = perfLong.length === 1 ? 'PRIMES NETTES'
+                  : perfLong.join(' + ').length <= 30 ? perfLong.join(' + ')
+                  : perfCourt.join(' + ');
   const perfLabelLc = perfLabel.toLowerCase();
+
+  // Un « — » muet laisse le membre arbitrer seul entre un zéro, une donnée absente et un
+  // bug. On lui dit lequel au survol. Le pointillé est la seule affordance disponible ici :
+  // sans lui, personne ne pense à survoler un tiret.
+  const tiret = txt => `<span style="cursor:help;border-bottom:1px dotted rgba(255,255,255,0.4)" title="${txt}">—</span>`;
 
   // Top 3 tickers
   const byTicker = {};
@@ -3684,6 +3763,10 @@ function renderMonthlyReport(months) {
           <input type="checkbox" onchange="toggleMonthlyInterest(this.checked)" ${inclInt ? 'checked' : ''} style="accent-color:#00e5cc;width:15px;height:15px;cursor:pointer">
           Inclure les intérêts
         </label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--c-muted);cursor:pointer;user-select:none" title="Ajoute les plus ou moins-values réalisées sur vos ventes d'actions ce mois-ci (calcul FIFO d'IBKR). Jambe action seule : les primes d'options sont déjà comptées, et les dividendes ont leur propre case. C'est ici qu'apparaît le résultat de vos assignations, une fois les titres revendus.">
+          <input type="checkbox" onchange="toggleMonthlyPnl(this.checked)" ${inclPnl ? 'checked' : ''} style="accent-color:#00e5cc;width:15px;height:15px;cursor:pointer">
+          Inclure le P&L réalisé (actions)
+        </label>
         ${inclInt && intNeedsImport ? `<span style="font-size:11px;color:#f0883e;font-family:'DM Mono',monospace" title="Vos relevés ont été importés avant qu'OLT Tracker ne ventile les intérêts par mois. Les montants existent dans le relevé IBKR, mais pas encore dans vos données : réimportez-le (ou relancez la synchronisation Flex Query) pour les faire apparaître.">⚠ aucune donnée d'intérêts — réimportez votre relevé</span>` : ''}
         <select onchange="setMonthlyReportMonth(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--c-text);font-family:'DM Mono',monospace;cursor:pointer;outline:none">
           ${monthsDesc.map(mo => `<option value="${mo}" ${mo===m?'selected':''}>${monthLabel(mo)}</option>`).join('')}
@@ -3706,7 +3789,7 @@ function renderMonthlyReport(months) {
             <div style="text-align:right">
               <div style="font-size:11px;color:#ffffff;margin-bottom:4px;font-weight:600;letter-spacing:0.8px">${perfLabel}</div>
               <div style="font-size:32px;font-weight:800;font-family:'DM Mono',monospace;color:${perfNet>=0?'#2ecc71':'#f85149'}">${perfNet>=0?'+':''}${fmt(perfNet)}</div>
-              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Primes brutes ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}${inclDiv ? ` · Dividendes ${divNetMonth>=0?'+':''}${fmt(divNetMonth)}` : ''}${inclInt ? ` · Intérêts ${intKnown ? (intMonth>=0?'+':'') + fmt(intMonth) : '—'}` : ''}</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:6px;font-family:'DM Mono',monospace">Primes brutes ${netBrut>=0?'+':''}${fmt(netBrut)} · Frais ${fmt(monthFees)}${inclDiv ? ` · Dividendes ${divNetMonth>=0?'+':''}${fmt(divNetMonth)}` : ''}${inclInt ? ` · Intérêts ${intKnown ? (intMonth>=0?'+':'') + fmt(intMonth) : tiret(intNeedsImport ? "Aucune ventilation mensuelle des intérêts dans vos données. Les montants figurent dans votre relevé IBKR : réimportez-le, ou relancez la synchronisation Flex Query, pour les faire apparaître." : "Aucun intérêt crédité sur le compte ce mois-ci.")}` : ''}${inclPnl ? ` · P&L actions ${pnlKnown ? (pnlMonth>=0?'+':'') + fmt(pnlMonth) : tiret("Aucune vente d'actions clôturée ce mois-ci, donc rien de réalisé à comptabiliser. Les plus ou moins-values sur vos positions encore ouvertes ne sont pas comptées ici.")}` : ''}</div>
             </div>
           </div>
         </div>
