@@ -2154,7 +2154,7 @@ function renderTransactions() {
                 ${t.exercised
                   ? `<span class="tx-tag" style="background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
                   : t.action === 'SELL' && t.assigned
-                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? "Assignation partielle : ${partialD.assignedQty} des ${Math.abs(t.qty)} contrats ont été assignés, le reste ${partialD.expired ? 'a expiré sans valeur' : 'a été racheté'}. La quantité vendue reste affichée à ${Math.abs(t.qty)} : la prime a bien été encaissée sur la totalité." : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
+                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? 'Assignation partielle : ' + partialD.assignedQty + ' des ' + Math.abs(t.qty) + ' contrats ont été assignés, le reste ' + (partialD.expired ? 'a expiré sans valeur' : 'a été racheté') + '. La quantité vendue reste affichée à ' + Math.abs(t.qty) + ' : la prime a bien été encaissée sur la totalité.' : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
                   : `<span class="tx-tag" style="background:${stBg};color:${stC}">${t.status}</span>`
                 }
               </div>
@@ -4431,7 +4431,7 @@ function openTickerModal(ticker, defaultTab) {
               ${t.exercised
                 ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
                 : t.action === 'SELL' && t.assigned
-                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? "Assignation partielle : ${partialD.assignedQty} des ${Math.abs(t.qty)} contrats ont été assignés, le reste ${partialD.expired ? 'a expiré sans valeur' : 'a été racheté'}. La quantité vendue reste affichée à ${Math.abs(t.qty)} : la prime a bien été encaissée sur la totalité." : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
+                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? 'Assignation partielle : ' + partialD.assignedQty + ' des ' + Math.abs(t.qty) + ' contrats ont été assignés, le reste ' + (partialD.expired ? 'a expiré sans valeur' : 'a été racheté') + '. La quantité vendue reste affichée à ' + Math.abs(t.qty) + ' : la prime a bien été encaissée sur la totalité.' : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
                 : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;${tagS(t.status)}">${t.status}</span>`}
             </div>
           </td>
