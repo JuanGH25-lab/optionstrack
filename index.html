@@ -655,10 +655,44 @@ function getPartialDetails(sellTrade) {
     String(b.strike) === String(sellTrade.strike) &&
     b.expiry === sellTrade.expiry
   );
-  if (!buys.length) return null;
   const assignedBuys = buys.filter(b => b.assigned === true);
   const closedBuys   = buys.filter(b => !b.assigned);
-  if (!assignedBuys.length || !closedBuys.length) return null;
+  if (!buys.length || !assignedBuys.length || !closedBuys.length) {
+    // Aucune jambe d'achat exploitable : c'est le cas quand le reliquat n'a pas été RACHETÉ
+    // mais a EXPIRÉ. IBKR clôture alors par deux lignes à $0, écartées du flux de trades, et
+    // la vente porte « assigné » sans dire combien. Deux replis, du plus sûr au plus indirect.
+    const tot = Math.abs(sellTrade.qty || 0);
+
+    // 1. La part assignée stampée à l'import (voir ibMergeData).
+    if (sellTrade.assignedQty > 0 && sellTrade.assignedQty < tot) {
+      return {
+        assignedQty: sellTrade.assignedQty,
+        closedQty: tot - sellTrade.assignedQty,
+        closedNet: 0, expired: true,
+        assignedDate: sellTrade.expiry, closedDate: sellTrade.expiry,
+      };
+    }
+
+    // 2. Sans ré-import, la jambe ACTION est déjà stockée : une assignation livre des
+    //    titres, et 500 titres pour un multiplicateur de 100 font 5 contrats. Moins direct,
+    //    mais cela restitue l'information sur des données déjà enregistrées.
+    if (sellTrade.assigned) {
+      const mult = getMultiplier(sellTrade) || 100;
+      const livres = stockTrades
+        .filter(s => normTicker(s.ticker) === normTicker(sellTrade.ticker) &&
+                     s.assigned && s.date === sellTrade.expiry)
+        .reduce((s, x) => s + Math.abs(x.qty || 0), 0);
+      const nb = Math.round(livres / mult);
+      if (nb > 0 && nb < tot) {
+        return {
+          assignedQty: nb, closedQty: tot - nb,
+          closedNet: 0, expired: true,
+          assignedDate: sellTrade.expiry, closedDate: sellTrade.expiry,
+        };
+      }
+    }
+    return null;
+  }
   const assignedQty  = assignedBuys.reduce((s, b) => s + (b.qty || 0), 0);
   const closedQty    = closedBuys.reduce((s, b) => s + (b.qty || 0), 0);
   const closedNet    = closedBuys.reduce((s, b) => s + toBase(b.premiumCollected, b.currency, b.date), 0);
@@ -2120,7 +2154,7 @@ function renderTransactions() {
                 ${t.exercised
                   ? `<span class="tx-tag" style="background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
                   : t.action === 'SELL' && t.assigned
-                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
+                  ? `<span class="tx-tag" style="background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? "Assignation partielle : ${partialD.assignedQty} des ${Math.abs(t.qty)} contrats ont été assignés, le reste ${partialD.expired ? 'a expiré sans valeur' : 'a été racheté'}. La quantité vendue reste affichée à ${Math.abs(t.qty)} : la prime a bien été encaissée sur la totalité." : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
                   : `<span class="tx-tag" style="background:${stBg};color:${stC}">${t.status}</span>`
                 }
               </div>
@@ -2132,7 +2166,7 @@ function renderTransactions() {
               <td colspan="12" style="padding:5px 20px 8px 32px">
                 <div style="display:flex;gap:20px;font-size:11px;font-family:'DM Mono',monospace;flex-wrap:wrap">
                   <span style="color:#f0883e">▸ ${partialD.assignedQty} contrat${partialD.assignedQty>1?'s':''} assigné${partialD.assignedQty>1?'s':''}<span style="color:var(--c-dim);margin-left:5px">(${partialD.assignedDate})</span></span>
-                  <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty>1?'s':''} fermé${partialD.closedQty>1?'s':''} · ${fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
+                  <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty>1?'s':''} ${partialD.expired ? 'expiré' + (partialD.closedQty>1?'s':'') + ' sans valeur' : 'fermé' + (partialD.closedQty>1?'s':'') + ' · ' + fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
                 </div>
               </td>
             </tr>`;
@@ -2141,6 +2175,14 @@ function renderTransactions() {
           return [mainRow];
         }).join('')}</tbody>
       </table>
+      </div>
+      <!-- Le nom « Transactions » laisse croire à un inventaire complet. Un renvoi coûte une
+           ligne, là où un second onglet aurait dupliqué la page et éclaté la donnée actions
+           sur deux écrans. -->
+      <div style="padding:11px 20px;border-top:1px solid var(--card-border);font-size:11px;color:var(--c-muted);display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+        <span style="color:var(--c-dim)">↗</span>
+        <span>Cette page ne liste que les <strong style="color:var(--c-text);font-weight:600">options</strong>. Les achats, ventes et transferts d'actions et d'ETF se trouvent dans</span>
+        <button onclick="equitiesTab='moves';setPage('equities')" style="background:none;border:none;padding:0;font:inherit;color:#00e5cc;cursor:pointer;text-decoration:underline">Actions &amp; ETF → Mouvements</button>
       </div>
     </div>`;
 }
@@ -4389,7 +4431,7 @@ function openTickerModal(ticker, defaultTab) {
               ${t.exercised
                 ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(196,181,253,0.15);color:#c4b5fd" title="Option exercée">EXERCISED</span>`
                 : t.action === 'SELL' && t.assigned
-                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="Option assignée">ASSIGNED</span>`
+                ? `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:rgba(240,136,62,0.15);color:#f0883e" title="${partialD ? "Assignation partielle : ${partialD.assignedQty} des ${Math.abs(t.qty)} contrats ont été assignés, le reste ${partialD.expired ? 'a expiré sans valeur' : 'a été racheté'}. La quantité vendue reste affichée à ${Math.abs(t.qty)} : la prime a bien été encaissée sur la totalité." : 'Option assignée'}">ASSIGNED${partialD ? ' ' + partialD.assignedQty + '/' + Math.abs(t.qty) : ''}</span>`
                 : `<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;${tagS(t.status)}">${t.status}</span>`}
             </div>
           </td>
@@ -4399,7 +4441,7 @@ function openTickerModal(ticker, defaultTab) {
             <td colspan="10" style="padding:5px 18px 8px 28px">
               <div style="display:flex;gap:20px;font-size:11px;font-family:'DM Mono',monospace;flex-wrap:wrap">
                 <span style="color:#f0883e">▸ ${partialD.assignedQty} contrat${partialD.assignedQty > 1 ? 's' : ''} assigné${partialD.assignedQty > 1 ? 's' : ''}<span style="color:var(--c-dim);margin-left:5px">(${partialD.assignedDate})</span></span>
-                <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty > 1 ? 's' : ''} fermé${partialD.closedQty > 1 ? 's' : ''} · ${fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
+                <span style="color:var(--c-muted)">· ${partialD.closedQty} contrat${partialD.closedQty > 1 ? 's' : ''} ${partialD.expired ? 'expiré' + (partialD.closedQty > 1 ? 's' : '') + ' sans valeur' : 'fermé' + (partialD.closedQty > 1 ? 's' : '') + ' · ' + fmt(partialD.closedNet)}<span style="color:var(--c-dim);margin-left:5px">(${partialD.closedDate})</span></span>
               </div>
             </td></tr>`];
         }
@@ -4547,6 +4589,7 @@ function renderEquities() {
         <div style="display:flex">
           <button class="eq-tab-btn" onclick="switchEqTab('positions')" style="border-bottom:2px solid ${equitiesTab==='positions'?'#00e5cc':'transparent'};color:${equitiesTab==='positions'?'#00e5cc':'var(--c-muted)'}">Positions actuelles</button>
           <button class="eq-tab-btn" onclick="switchEqTab('realized')" style="border-bottom:2px solid ${equitiesTab==='realized'?'#00e5cc':'transparent'};color:${equitiesTab==='realized'?'#00e5cc':'var(--c-muted)'}">Détail des P&L réalisés</button>
+          <button class="eq-tab-btn" onclick="switchEqTab('moves')" style="border-bottom:2px solid ${equitiesTab==='moves'?'#00e5cc':'transparent'};color:${equitiesTab==='moves'?'#00e5cc':'var(--c-muted)'}">Mouvements</button>
           <button class="eq-tab-btn" onclick="switchEqTab('dividends')" style="border-bottom:2px solid ${equitiesTab==='dividends'?'#00e5cc':'transparent'};color:${equitiesTab==='dividends'?'#00e5cc':'var(--c-muted)'}">Dividendes</button>
         </div>
         <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
@@ -4579,9 +4622,9 @@ function renderEquities() {
         <div class="eq-kpi-sub">jambe action seule · hors primes & dividendes</div>
       </div>
       <div class="eq-kpi">
-        <div class="eq-kpi-label">Clôtures</div>
-        <div class="eq-kpi-val" style="color:#00e5cc">${realized.length}</div>
-        <div class="eq-kpi-sub"><span style="color:#00e5cc">${rWins} gagnante${rWins!==1?'s':''}</span> · <span style="color:var(--red)">${rLosses} perdante${rLosses!==1?'s':''}</span></div>
+        <div class="eq-kpi-label">P&L moyen / clôture</div>
+        <div class="eq-kpi-val" style="color:${pnlColor(rAvg)}">${sign(rAvg)}${fmt(rAvg)}</div>
+        <div class="eq-kpi-sub">sur ${realized.length} clôture${realized.length!==1?'s':''}</div>
       </div>
       <div class="eq-kpi">
         <div class="eq-kpi-label">Taux de réussite</div>
@@ -4589,9 +4632,9 @@ function renderEquities() {
         <div class="eq-kpi-sub">des clôtures sont gagnantes</div>
       </div>
       <div class="eq-kpi">
-        <div class="eq-kpi-label">P&L moyen / clôture</div>
-        <div class="eq-kpi-val" style="color:${pnlColor(rAvg)}">${sign(rAvg)}${fmt(rAvg)}</div>
-        <div class="eq-kpi-sub">sur ${realized.length} clôture${realized.length!==1?'s':''}</div>
+        <div class="eq-kpi-label">Clôtures</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${realized.length}</div>
+        <div class="eq-kpi-sub"><span style="color:#00e5cc">${rWins} gagnante${rWins!==1?'s':''}</span> · <span style="color:var(--red)">${rLosses} perdante${rLosses!==1?'s':''}</span></div>
       </div>
     </div>`}
 
@@ -4732,6 +4775,146 @@ function renderEquities() {
       </table>`}
     </div>`;
 
+  // ── Onglet « Mouvements » — achats, ventes et transferts de titres
+  //
+  // Ces lignes n'apparaissaient nulle part : l'onglet des P&L réalisés ne liste que les
+  // cessions, donc tous les ACHATS — y compris ceux issus d'une assignation — restaient
+  // invisibles, alors même qu'ils déterminent le PRU. Sur un compte type, c'est environ
+  // trois quarts des mouvements actions.
+  //
+  // Ici plutôt qu'en second onglet de la page Transactions : tout ce qui touche aux actions
+  // vit déjà sur cette page, dividendes compris, et un onglet de quelques dizaines de lignes
+  // à côté de ~1 500 transactions d'options aurait eu l'air vide.
+  const mvYear = d => currentYear === 'ALL' || (d || '').startsWith(currentYear);
+  const moves = [
+    ...groupStockFills(stockTrades.filter(t => mvYear(t.date)))
+      .map(t => ({ ...t, _kind: (t.action === 'SELL' || t.qty < 0) ? 'VENTE' : 'ACHAT' })),
+    // Un transfert n'est ni un achat ni une vente : ni prix, ni frais, ni P&L. Il figure
+    // quand même ici, sans quoi une quantité qui bouge sans trade resterait inexplicable.
+    ...stockTransfers.filter(t => mvYear(t.date)).map(t => ({ ...t, _kind: 'TRANSFERT' })),
+  ].sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
+
+  // proceeds est signé chez IB — négatif à l'achat, positif à la vente — et les frais sont
+  // toujours négatifs : une simple addition donne donc le flux de trésorerie réel.
+  const mvFlow    = m => toBase((m.proceeds || 0) + (m.fees || 0), m.currency, m.date);
+  const mvAchats  = moves.filter(m => m._kind === 'ACHAT');
+  const mvVentes  = moves.filter(m => m._kind === 'VENTE');
+  const mvInvesti = Math.abs(mvAchats.reduce((s, m) => s + mvFlow(m), 0));
+  const mvProduit = mvVentes.reduce((s, m) => s + mvFlow(m), 0);
+  const mvTickers = new Set(moves.map(m => m.ticker)).size;
+
+  // Entrées par assignation — la question que se pose un vendeur de puts : mes titres,
+  // je les ai choisis ou ils me sont tombés dessus ? Un taux élevé n'est pas un défaut,
+  // c'est la roue qui tourne.
+  const mvAchAss   = mvAchats.filter(m => m.assigned);
+  const mvPctAss   = mvAchats.length ? Math.round(mvAchAss.length / mvAchats.length * 100) : null;
+  const mvMontAss  = Math.abs(mvAchAss.reduce((s, m) => s + mvFlow(m), 0));
+
+  // Durée de détention moyenne, reconstruite en FIFO : IBKR ne donne pas la date
+  // d'ouverture du lot cédé, seulement son P&L.
+  //
+  // L'appariement court sur l'historique COMPLET, jamais sur l'année filtrée — un lot
+  // acheté en 2024 et vendu en 2025 serait sinon impossible à apparier. Seules les
+  // CESSIONS tombant dans la période filtrée sont ensuite comptées.
+  //
+  // Les titres achetés avant le premier relevé importé ne s'apparient à rien : ils sont
+  // absents du calcul plutôt que comptés à tort avec une durée fausse.
+  const mvDuree = (() => {
+    const lots = {}, ces = [];
+    groupStockFills(stockTrades)
+      .slice().sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
+      .forEach(t => {
+        const k = t.ticker;
+        lots[k] = lots[k] || [];
+        if (t.qty > 0) { lots[k].push({ date: t.date, qty: t.qty }); return; }
+        let reste = -t.qty;
+        while (reste > 0 && lots[k].length) {
+          const l = lots[k][0], pris = Math.min(reste, l.qty);
+          if (mvYear(t.date)) ces.push({ j: Math.round((new Date(t.date) - new Date(l.date)) / 86400000), q: pris });
+          l.qty -= pris; reste -= pris;
+          if (l.qty <= 0) lots[k].shift();
+        }
+      });
+    const q = ces.reduce((s, d) => s + d.q, 0);
+    // Pondérée par les quantités : céder 1 000 titres après un an pèse plus que 10 titres
+    // après une semaine.
+    return { jours: q ? Math.round(ces.reduce((s, d) => s + d.j * d.q, 0) / q) : null, lots: ces.length };
+  })();
+
+  const mvParTk = {};
+  moves.forEach(m => { mvParTk[m.ticker] = (mvParTk[m.ticker] || 0) + 1; });
+  const mvTop = Object.entries(mvParTk).sort((a, b) => b[1] - a[1])[0];
+  const mvTag = k => {
+    const c = k === 'ACHAT' ? ['rgba(46,160,67,0.15)', '#2ea043']
+            : k === 'VENTE' ? ['rgba(248,81,73,0.15)', '#f85149']
+            :                 ['rgba(240,136,62,0.15)', '#f0883e'];
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;font-family:'DM Mono',monospace;background:${c[0]};color:${c[1]}">${k}</span>`;
+  };
+
+  const movesHtml = `
+    ${moves.length === 0 ? '' : `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="eq-kpi" title="Part de vos entrées en actions qui viennent d'une assignation d'option plutôt que d'un achat au marché. Sur une stratégie de roue, un taux élevé est normal : c'est le put vendu qui livre les titres, et non une décision d'achat.">
+        <div class="eq-kpi-label">Entrées par assignation${currentYear !== 'ALL' ? ' · ' + currentYear : ''}</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${mvPctAss === null ? '—' : mvPctAss + '%'}</div>
+        <div class="eq-kpi-sub">${mvAchAss.length} des ${mvAchats.length} achat${mvAchats.length !== 1 ? 's' : ''}${mvMontAss ? ' · ' + fmtK(mvMontAss) : ''}</div>
+      </div>
+      <div class="eq-kpi" title="Temps moyen entre l'entrée et la sortie d'un titre, pondéré par les quantités et reconstruit en FIFO. Seuls les lots dont l'achat figure dans vos relevés sont appariés : des titres acquis avant votre premier import ne sont pas comptés, plutôt que de fausser la moyenne.">
+        <div class="eq-kpi-label">Durée de détention moy.</div>
+        <div class="eq-kpi-val" style="color:var(--c-text)">${mvDuree.jours === null ? '—' : mvDuree.jours + ' j'}</div>
+        <div class="eq-kpi-sub">${mvDuree.lots === 0 ? 'aucun lot cédé' : 'sur ' + mvDuree.lots + ' lot' + (mvDuree.lots !== 1 ? 's' : '') + ' cédé' + (mvDuree.lots !== 1 ? 's' : '') + ' · FIFO'}</div>
+      </div>
+      <div class="eq-kpi" title="Le sous-jacent sur lequel vous avez le plus bougé — achats, ventes et transferts confondus. Une concentration forte signale un ticker sur lequel la roue tourne beaucoup.">
+        <div class="eq-kpi-label">Ticker le plus actif</div>
+        <div class="eq-kpi-val" style="color:var(--c-text);font-size:18px">${mvTop ? mvTop[0] : '—'}</div>
+        <div class="eq-kpi-sub">${mvTop ? mvTop[1] + ' mouvement' + (mvTop[1] !== 1 ? 's' : '') + ' sur ' + moves.length : ''}</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Mouvements</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${moves.length}</div>
+        <div class="eq-kpi-sub">${mvAchats.length} achat${mvAchats.length !== 1 ? 's' : ''} · ${mvVentes.length} vente${mvVentes.length !== 1 ? 's' : ''}${moves.some(m => m._kind === 'TRANSFERT') ? ' · ' + moves.filter(m => m._kind === 'TRANSFERT').length + ' transf.' : ''}</div>
+      </div>
+    </div>`}
+
+    <div class="eq-wrap">
+      ${eqTabs(currentYear !== 'ALL' ? currentYear : '')}
+      ${moves.length === 0 ? `
+      <div style="text-align:center;padding:70px 20px;color:var(--c-muted)">
+        <div style="font-size:34px;margin-bottom:14px">📦</div>
+        <div style="font-size:15px;font-weight:600;color:var(--c-text);margin-bottom:8px">Aucun mouvement sur actions${currentYear !== 'ALL' ? ' en ' + currentYear : ''}</div>
+        <div style="font-size:12px;max-width:460px;margin:0 auto;line-height:1.6">
+          Les achats, ventes et transferts de titres apparaîtront ici dès qu'un relevé XML ou
+          CSV en contient. Les transactions d'options se trouvent sur la page Transactions.
+        </div>
+      </div>` : `
+      <table class="eq-table">
+        <thead><tr>
+          <th>Date</th><th>Ticker</th><th>Sens</th><th style="text-align:right">Qté</th>
+          <th style="text-align:right">Prix</th><th style="text-align:right">Montant</th>
+          <th style="text-align:right">Frais</th><th style="text-align:right">P&L réalisé</th><th>CCY</th>
+        </tr></thead>
+        <tbody>${moves.map(m => {
+          const ccy  = m.currency || BASE_CCY;
+          const cs   = ccySym(ccy);
+          const isFx = ccy !== BASE_CCY;
+          const tr   = m._kind === 'TRANSFERT';
+          const flow = tr ? null : mvFlow(m);
+          const pnl  = (!tr && (m.realizedPnl || (m._econOk && Math.abs(m._econPnl) > 0.005))) ? stockDispPnlBase(m) : null;
+          return `<tr data-eq-ticker="${m.ticker}" data-date="${m.date}">
+            <td class="mono" style="font-size:11px;color:var(--c-muted)">${dateFR(m.date)}${m.time ? '<br><span style="font-size:10px;color:var(--c-dim)">' + m.time + '</span>' : ''}</td>
+            <td><span class="eq-tick ${tickCcyClass(ccy)}">${m.ticker}</span>${m.assigned ? ' <span class="eq-atag">ASSIGNÉ</span>' : ''}</td>
+            <td>${mvTag(m._kind)}</td>
+            <td class="mono" style="text-align:right;color:${m.qty < 0 ? 'var(--red)' : 'var(--c-text)'}">${m.qty > 0 ? '+' : ''}${m.qty}</td>
+            <td class="mono neu" style="text-align:right">${tr ? '—' : cs + (m.price || 0).toFixed(2)}</td>
+            <td class="mono" style="text-align:right;font-weight:600;color:${flow === null ? 'var(--c-dim)' : flow >= 0 ? '#00e5cc' : 'var(--c-text)'}">${flow === null ? '—' : fmt(flow)}${flow !== null && isFx ? fxSub(cs, (m.proceeds || 0) + (m.fees || 0)) : ''}</td>
+            <td class="mono neu" style="text-align:right">${tr || !m.fees ? '—' : cs + Math.abs(m.fees).toFixed(2)}</td>
+            <td class="mono" style="text-align:right;font-weight:700;color:${pnl === null ? 'var(--c-dim)' : pnlColor(pnl)}">${pnl === null ? '—' : sign(pnl) + fmt(pnl)}</td>
+            <td><span class="pill ${ccy.toLowerCase()}">${ccy}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`}
+    </div>`;
+
   document.getElementById('content').innerHTML = `
     <style>
       .eq-kpi { background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px; }
@@ -4757,7 +4940,7 @@ function renderEquities() {
       .eq-tab-btn { padding:11px 18px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;transition:all 0.15s; }
     </style>
 
-    ${equitiesTab === 'realized' ? realizedHtml : equitiesTab === 'dividends' ? dividendsHtml : `
+    ${equitiesTab === 'realized' ? realizedHtml : equitiesTab === 'dividends' ? dividendsHtml : equitiesTab === 'moves' ? movesHtml : `
     ${rows.length === 0 ? '' : `
     <!-- KPI row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
@@ -4772,14 +4955,14 @@ function renderEquities() {
         <div class="eq-kpi-sub" style="color:${pnlColor(totalPnl)};font-weight:600">${sign(totalPnlPct)}${totalPnlPct.toFixed(2)}% du coût</div>
       </div>
       <div class="eq-kpi">
-        <div class="eq-kpi-label">Positions</div>
-        <div class="eq-kpi-val" style="color:#00e5cc">${rows.length}</div>
-        <div class="eq-kpi-sub">${nStk} action${nStk!==1?'s':''} · ${nEtf} ETF</div>
-      </div>
-      <div class="eq-kpi">
         <div class="eq-kpi-label">Plus grosse ligne</div>
         <div class="eq-kpi-val" style="color:var(--c-text);font-size:18px">${top ? top.ticker : '—'}</div>
         <div class="eq-kpi-sub">${top ? topPct.toFixed(1) + '% du portefeuille actions' : ''}</div>
+      </div>
+      <div class="eq-kpi">
+        <div class="eq-kpi-label">Positions</div>
+        <div class="eq-kpi-val" style="color:#00e5cc">${rows.length}</div>
+        <div class="eq-kpi-sub">${nStk} action${nStk!==1?'s':''} · ${nEtf} ETF</div>
       </div>
     </div>`}
 
@@ -5727,7 +5910,7 @@ function saveAppData() {
           qty: t.qty, premiumCollected: t.premiumCollected, fees: t.fees,
           status: t.status, currency: t.currency,
           multiplier: t.multiplier, transactionID: t.transactionID, ibOrderID: t.ibOrderID,
-          assigned: t.assigned, exercised: t.exercised,
+          assigned: t.assigned, exercised: t.exercised, assignedQty: t.assignedQty,
         }));
         const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, stockPositions, stockTrades, stockDividends, stockTransfers, savedAt: new Date().toISOString(), slim: true };
         localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(payload2));
@@ -6143,11 +6326,21 @@ function ibParseXML(xmlText) {
     // (donc skippés juste après) → pour afficher "EXERCISED"/"ASSIGNED" au lieu de "Closed".
     if (openClose.includes('C')) {
       const _codes = notes.split(';').map(s => s.trim());
-      if (_codes.includes('Ex') || _codes.includes('A')) {
+      // « Ep » (expiration sans valeur) est désormais capturé au même titre qu'« A » et
+      // « Ex ». Sans lui, une assignation PARTIELLE dont le reliquat expire est
+      // indiscernable d'une assignation totale : IBKR clôture en deux lignes à $0 — une
+      // « A » pour la part assignée, une « Ep » pour le reste — et seule la première était
+      // vue. C'est le cas signalé sur QUBT (5 assignés sur 10).
+      const _kind = _codes.includes('Ex') ? 'exercised'
+                  : _codes.includes('A')  ? 'assigned'
+                  : _codes.includes('Ep') ? 'expired' : null;
+      if (_kind) {
         result.closedContracts.push({
           ticker, type: putCall === 'C' ? 'C' : 'P',
           strike, expiry: normDate(expiry), date: normDate(tradeDate),
-          kind: _codes.includes('Ex') ? 'exercised' : 'assigned',
+          kind: _kind,
+          // La quantité était jetée : le badge savait « assigné », jamais « combien ».
+          qty: Math.abs(quantity),
         });
       }
     }
@@ -6659,7 +6852,29 @@ function ibMergeData(parsed) {
   // (total vendu ouvert − qté restante IBKR), fill entier par fill entier (les plus petits
   // d'abord). On ne modifie JAMAIS les quantités (seulement statut/flag) → ré-import idempotent.
   // Sinon on fermerait les 3 contrats à tort et la position ouverte disparaissait (bug Juan/VICI).
+  // Assignation PARTIELLE : on agrège les quantités par contrat pour retrouver le partage
+  // assigné / expiré, puis on le stampe sur la vente. Ces lignes de clôture valent $0 et
+  // sont écartées du flux de trades — sans ce stamp, l'information est perdue à l'import.
+  const _ccQty = {};
   (parsed.closedContracts || []).forEach(cc => {
+    const k = normTicker(cc.ticker) + '|' + cc.type + '|' + cc.strike + '|' + cc.expiry;
+    _ccQty[k] = _ccQty[k] || { assigned: 0, expired: 0 };
+    if (cc.kind === 'expired') _ccQty[k].expired += cc.qty || 0;
+    else                       _ccQty[k].assigned += cc.qty || 0;
+  });
+  Object.entries(_ccQty).forEach(([k, v]) => {
+    if (!v.assigned || !v.expired) return; // assignation totale, ou simple expiration
+    transactions.forEach(t => {
+      if (t.action !== 'SELL') return;
+      if (normTicker(t.ticker) + '|' + t.type + '|' + t.strike + '|' + t.expiry !== k) return;
+      t.assignedQty = v.assigned;
+    });
+  });
+
+  (parsed.closedContracts || []).forEach(cc => {
+    // Une expiration sans valeur n'est ni une assignation ni un exercice : elle ne sert
+    // qu'au calcul du partage ci-dessus et ne doit poser aucun drapeau.
+    if (cc.kind === 'expired') return;
     const flag = cc.kind === 'exercised' ? 'exercised' : 'assigned';
     const sameContract = t =>
       normTicker(t.ticker) === normTicker(cc.ticker) && t.type === cc.type &&
