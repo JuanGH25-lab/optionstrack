@@ -5050,12 +5050,83 @@ function renderEquities() {
   }
 }
 
+// ── Tri du tableau des positions ouvertes
+//
+// Sens par colonne au PREMIER clic : chaque colonne a un « bon » premier ordre. Trier la
+// distance du plus grand au plus petit n'intéresse personne — ce qu'on cherche, ce sont les
+// positions proches de la monnaie, donc les plus petites. À l'inverse une prime se lit de la
+// plus grosse à la plus petite. Un sens unique aurait obligé à double-cliquer une fois sur deux.
+//
+// +1 = croissant, -1 = décroissant. L'échéance ouvre à +1, ce qui reproduit exactement le
+// tri par défaut d'avant : rien ne bouge tant que personne ne clique.
+const POS_SORT_DEF = { ticker: 1, expiry: 1, qty: -1, net: -1, yield: -1, dist: 1 };
+let posSortCol = 'expiry', posSortDir = 1;
+
+function setPosSort(col) {
+  if (posSortCol === col) posSortDir *= -1;
+  else { posSortCol = col; posSortDir = POS_SORT_DEF[col] || 1; }
+  renderPositions();
+  attachContentListeners();
+}
+
+// Prime nette, rendement et distance sont calculés DANS la boucle de rendu, donc trop tard
+// pour trier dessus. On les évalue ici, en amont. Le doublon de calcul porte sur quelques
+// dizaines de lignes ; refondre la boucle pour l'éviter aurait touché quatre-vingts lignes
+// d'affichage pour gagner des millisecondes.
+function posSortStamp(g) {
+  const collat = toBase(g.strike * g.qty * getMultiplier(g), g.currency, g.date);
+  const toMin = s => { const p = s.split(':'); if (p.length >= 2) return parseInt(p[0])*60+parseInt(p[1]); if (s.length >= 4) return parseInt(s.slice(0,2))*60+parseInt(s.slice(2,4)); return NaN; };
+  // Rendement roll-aware, à l'identique de la colonne affichée : un tri qui classerait sur
+  // une autre grandeur que celle qu'on lit passerait pour un bug.
+  const fillsNet = (g._fills || [g]).reduce((s, f) => s + txNet(f), 0);
+  const rollBuys = [];
+  (g._fills || [g]).forEach(f => {
+    const buysOnDay = transactions.filter(b2 => b2.action === 'BUY' && b2.ticker === g.ticker && b2.type === g.type && b2.date === f.date);
+    const multiSeries = new Set(buysOnDay.map(b2 => b2.strike)).size > 1;
+    transactions.forEach(b => {
+      if (b.action !== 'BUY' || b.ticker !== g.ticker || b.type !== g.type || b.date !== f.date) return;
+      if (b.time && f.time && Math.abs(toMin(b.time) - toMin(f.time)) > 60) return;
+      if (multiSeries && b.strike !== g.strike) return;
+      if (!rollBuys.includes(b)) rollBuys.push(b);
+    });
+  });
+  const totalNet = fillsNet + rollBuys.reduce((s, b) => s + txNet(b), 0);
+
+  g._sNet   = g._trades ? g._trades.reduce((s, tr) => s + txNet(tr), 0) : txNet(g);
+  g._sYield = collat > 0 ? (totalNet / collat) * 100 : null;
+
+  const px = livePrices[g.ticker];
+  if (px == null) { g._sDist = null; return; }
+  const otm = g.type === 'P' ? ((px - g.strike) / g.strike) * 100
+                             : ((g.strike - px) / g.strike) * 100;
+  // Même convention que la colonne : le VENDEUR veut rester hors de la monnaie, l'ACHETEUR
+  // veut y entrer. Trier sur l'OTM brut mélangerait les deux sens de risque.
+  g._sDist = g.action === 'BUY' ? -otm : otm;
+}
+
+function posSortCompare(a, b) {
+  if (posSortCol === 'ticker') return posSortDir * a.ticker.localeCompare(b.ticker);
+  if (posSortCol === 'expiry') return posSortDir * (new Date(a.expiry) - new Date(b.expiry));
+  const vals = { qty: g => g.qty, net: g => g._sNet, yield: g => g._sYield, dist: g => g._sDist };
+  const fn = vals[posSortCol] || vals.net;
+  const va = fn(a), vb = fn(b);
+  // Une valeur absente finit TOUJOURS en bas, dans les deux sens : sans ça, le premier clic
+  // sur Distance ou Rdt. Net remplirait le haut du tableau de lignes « — ».
+  if (va == null && vb == null) return new Date(a.expiry) - new Date(b.expiry);
+  if (va == null) return 1;
+  if (vb == null) return -1;
+  if (va === vb) return new Date(a.expiry) - new Date(b.expiry); // départage stable
+  return posSortDir * (va - vb);
+}
+
 function renderPositions() {
   const open = transactions.filter(t=>t.status==='Open').sort((a,b)=>new Date(a.expiry)-new Date(b.expiry));
   const today = new Date(); today.setHours(0,0,0,0);
 
   // Use groupOpenPositions — groups by ticker|type|strike|expiry regardless of entry date
   const openGrouped = groupOpenPositions(open).sort((a,b) => new Date(a.expiry) - new Date(b.expiry));
+  openGrouped.forEach(posSortStamp);
+  openGrouped.sort(posSortCompare);
   // Rename _fills to _trades for backward compat
   openGrouped.forEach(g => { g._trades = g._fills; });
 
@@ -5093,6 +5164,9 @@ function renderPositions() {
   const avgYield = avgYieldRatios.length > 0 ? avgYieldRatios.reduce((s,r) => s+r, 0) / avgYieldRatios.length : 0;
   const avgYieldCount = avgYieldRatios.length;
   const hasPrices = openGrouped.some(t => livePrices[t.ticker]);
+  // « Expiry » et « Exp. » portent la même donnée : les deux en-têtes pilotent donc le même
+  // critère, et affichent la même flèche.
+  const pArr = col => posSortCol === col ? (posSortDir === -1 ? ' ↓' : ' ↑') : ' ↕';
   const watchPositions = openGrouped.filter(t => {
     const price = livePrices[t.ticker];
     if (!price) return false;
@@ -5160,6 +5234,9 @@ function renderPositions() {
       .pos-table     { width:100%;border-collapse:collapse; }
       .pos-table thead th { padding:10px 12px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid var(--card-border);background:var(--card-surface);white-space:nowrap; }
       .pos-table thead th:first-child { padding-left:20px; }
+      /* Colonne de tri active + affordance au survol, comme sur le Ranking. */
+      .pos-table thead th.active { color:#00e5cc; }
+      .pos-table thead th[data-psort]:hover { color:var(--c-text); }
       .pos-table tbody tr { border-bottom:1px solid var(--card-bg);transition:background 0.1s;cursor:pointer; }
       .pos-table tbody tr:hover td { background:rgba(255,255,255,0.02); }
       .pos-table tbody td { padding:9px 12px;vertical-align:middle; }
@@ -5222,9 +5299,9 @@ function renderPositions() {
       ${positionsTab === 'list' ? `
       <table class="pos-table">
         <thead><tr>
-          <th>Ticker</th><th>Action</th><th>Type</th><th>Strike</th>
-          <th>Expiry</th><th style="text-align:center">Qty</th><th style="text-align:right">Prem. Coll.</th><th style="text-align:right">Fees</th>
-          <th style="text-align:right">Net Premium</th><th style="text-align:right">Rdt. Net</th><th style="text-align:right">Cours</th><th style="text-align:center">Distance</th><th style="text-align:center">Exp.</th><th>CCY</th>
+          <th data-psort="ticker" style="cursor:pointer" class="${posSortCol==='ticker'?'active':''}">Ticker${pArr('ticker')}</th><th>Action</th><th>Type</th><th>Strike</th>
+          <th data-psort="expiry" style="cursor:pointer" class="${posSortCol==='expiry'?'active':''}">Expiry${pArr('expiry')}</th><th data-psort="qty" style="text-align:center;cursor:pointer" class="${posSortCol==='qty'?'active':''}">Qty${pArr('qty')}</th><th style="text-align:right">Prem. Coll.</th><th style="text-align:right">Fees</th>
+          <th data-psort="net" style="text-align:right;cursor:pointer" class="${posSortCol==='net'?'active':''}">Net Premium${pArr('net')}</th><th data-psort="yield" style="text-align:right;cursor:pointer" class="${posSortCol==='yield'?'active':''}">Rdt. Net${pArr('yield')}</th><th style="text-align:right">Cours</th><th data-psort="dist" style="text-align:center;cursor:pointer" class="${posSortCol==='dist'?'active':''}" title="Trie les positions de la plus proche de la monnaie à la plus éloignée. Le sens tient compte de l'action : un achat est favorable dans la monnaie, une vente en dehors.">Distance${pArr('dist')}</th><th data-psort="expiry" style="text-align:center;cursor:pointer" class="${posSortCol==='expiry'?'active':''}">Exp.${pArr('expiry')}</th><th>CCY</th>
         </tr></thead>
         <tbody>${openGrouped.map(t => {
           const days = daysTo(t.expiry);
@@ -5404,6 +5481,12 @@ function renderPositions() {
         <div id="analyse-body" style="display:none"></div>
       </div>` : ''}
     </div>`;
+
+  // Attribut distinct de celui du Ranking (data-sort) : les deux tableaux ne doivent pas
+  // se voir attribuer le gestionnaire de l'autre.
+  document.querySelectorAll('th[data-psort]').forEach(th => {
+    th.addEventListener('click', () => setPosSort(th.dataset.psort));
+  });
 
   // Le tableau est reconstruit à chaque rendu : on réapplique le filtre en cours.
   if (posSearchQ && positionsTab === 'list') {
