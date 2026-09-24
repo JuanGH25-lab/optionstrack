@@ -6009,6 +6009,19 @@ function saveAppData() {
 // Couvre les longs calls jamais clôturés (ex. renommage de ticker SENS→SENS1, ou
 // la réconciliation qui ne traite que les SELL) et toute position non réconciliée.
 // Idempotent : ne touche que les statuts "Open" déjà expirés.
+// Un rachat ne ferme une vente que s'il lui est POSTÉRIEUR.
+//
+// Le test portait sur la seule DATE (b.date >= t.date), donc à la journée près : un achat
+// d'OUVERTURE passé le matin était pris pour le rachat d'une vente de l'après-midi. C'est ce
+// qui faisait disparaître la vente à découvert de dudus67 sur PXT — achat 11:45, vente
+// 12:25, même jour, même série.
+//
+// Quand l'heure manque des deux côtés (saisie manuelle), on s'en tient à la date : mieux
+// vaut l'ancien comportement qu'un appariement qu'on ne peut pas ordonner.
+function rachatPosterieur(b, t) {
+  return (b.time && t.time) ? (b.date + b.time) > (t.date + t.time) : b.date >= t.date;
+}
+
 // Requalifie en « Clôturée » toute option ACHETÉE que plus rien ne maintient ouverte.
 //
 // Une même série peut porter successivement une jambe longue puis une jambe courte : acheter
@@ -6054,7 +6067,7 @@ function reconcileRolledSells() {
     const rachat = transactions.some(b =>
       b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
       normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
-      b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+      b.strike === t.strike && b.expiry === t.expiry && rachatPosterieur(b, t)
     );
     if (rachat) t.status = 'Closed';
   });
@@ -6872,7 +6885,7 @@ function ibParseXML(xmlText) {
         const closedByBuy = result.trades.some(b =>
           b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
           normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
-          b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+          b.strike === t.strike && b.expiry === t.expiry && rachatPosterieur(b, t)
         );
         if (isAssignedSell) {
           t.status = 'Closed';
@@ -8672,7 +8685,7 @@ function ibParseCSV(csvText) {
       const closedByBuy = result.trades.some(b =>
         b.action === 'BUY' && !b.assigned && b.status === 'Closed' &&
         normTicker(b.ticker) === normTicker(t.ticker) && b.type === t.type &&
-        b.strike === t.strike && b.expiry === t.expiry && b.date >= t.date
+        b.strike === t.strike && b.expiry === t.expiry && rachatPosterieur(b, t)
       );
       if (isAssignedSell) {
         t.status = 'Closed';
