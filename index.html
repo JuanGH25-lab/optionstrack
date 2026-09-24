@@ -6009,6 +6009,33 @@ function saveAppData() {
 // Couvre les longs calls jamais clôturés (ex. renommage de ticker SENS→SENS1, ou
 // la réconciliation qui ne traite que les SELL) et toute position non réconciliée.
 // Idempotent : ne touche que les statuts "Open" déjà expirés.
+// Requalifie en « Clôturée » toute option ACHETÉE que plus rien ne maintient ouverte.
+//
+// Une même série peut porter successivement une jambe longue puis une jambe courte : acheter
+// 2 puts, les revendre, puis en vendre 2 autres à découvert. La réconciliation à l'import
+// comparait la série aux positions ouvertes SANS regarder le sens, si bien que la position
+// courte restante « couvrait » l'achat déjà soldé — qui restait ouvert indéfiniment.
+//
+// On raisonne ici sur le solde SIGNÉ de la série : nul ou négatif, plus aucune position
+// longue n'existe, donc aucune jambe achetée ne peut rester ouverte.
+//
+// Le cas symétrique — une vente que plus rien ne maintient ouverte — est déjà traité par
+// reconcileRolledSells, qui apparie la vente à son rachat.
+//
+// Travaille sur l'historique déjà enregistré : corrige donc sans exiger de ré-import.
+function reconcileClosedLongs() {
+  const cle = t => normTicker(t.ticker) + '|' + t.type + '|' + t.strike + '|' + t.expiry;
+  const net = {};
+  transactions.forEach(t => {
+    // qty est stocké en valeur absolue : le sens vient de l'action.
+    net[cle(t)] = (net[cle(t)] || 0) + (t.action === 'BUY' ? 1 : -1) * Math.abs(t.qty || 0);
+  });
+  transactions.forEach(t => {
+    if (t.action !== 'BUY' || t.status !== 'Open' || t.assigned) return;
+    if ((net[cle(t)] || 0) <= 0) t.status = 'Closed';
+  });
+}
+
 // Requalifie en « Clôturée » toute vente RACHETÉE que le statut disait « Expirée ».
 //
 // La réconciliation à l'import ne voit qu'un relevé à la fois : si la vente est dans le
@@ -6091,6 +6118,7 @@ function loadAppData() {
       )) { t.status = 'Closed'; t.assigned = true; }
     });
     reconcileRolledSells();
+    reconcileClosedLongs();
     // Marque expirée toute option ouverte dont la date d'expiration est passée
     markExpiredOptions();
     return transactions.length > 0;
@@ -6821,7 +6849,12 @@ function ibParseXML(xmlText) {
     if (t.action !== 'SELL' && !(t.action === 'BUY' && !t.assigned)) return;
     const stillOpen = result.openPositions.some(op =>
       normTicker(op.ticker) === normTicker(t.ticker) && op.type === t.type &&
-      op.strike === t.strike && op.expiry === t.expiry
+      op.strike === t.strike && op.expiry === t.expiry &&
+      // Le SENS doit concorder. Une même série peut porter successivement une jambe longue
+      // et une jambe courte — acheter 2 puts, les revendre, puis en vendre 2 à découvert.
+      // Sans ce test, la position COURTE restante « couvrait » l'achat déjà soldé, qui
+      // restait affiché ouvert indéfiniment.
+      op.action === t.action
     );
     if (!stillOpen) {
       if (t.action === 'SELL') {
@@ -6927,6 +6960,7 @@ function ibMergeData(parsed) {
 
   // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
   reconcileRolledSells();
+  reconcileClosedLongs();
   markExpiredOptions();
 
   // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED").
@@ -8616,7 +8650,12 @@ function ibParseCSV(csvText) {
     if (t.status !== 'Open') return; // already resolved by Code field
     const stillOpen = result.openPositions.some(op =>
       normTicker(op.ticker) === normTicker(t.ticker) && op.type === t.type &&
-      op.strike === t.strike && op.expiry === t.expiry
+      op.strike === t.strike && op.expiry === t.expiry &&
+      // Le SENS doit concorder. Une même série peut porter successivement une jambe longue
+      // et une jambe courte — acheter 2 puts, les revendre, puis en vendre 2 à découvert.
+      // Sans ce test, la position COURTE restante « couvrait » l'achat déjà soldé, qui
+      // restait affiché ouvert indéfiniment.
+      op.action === t.action
     );
     if (!stillOpen) {
       const isAssignedSell = result.trades.some(b =>
