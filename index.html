@@ -6022,6 +6022,52 @@ function rachatPosterieur(b, t) {
   return (b.time && t.time) ? (b.date + b.time) > (t.date + t.time) : b.date >= t.date;
 }
 
+// Rouvre les jambes fermées à tort, quand le solde de la série dit qu'une position subsiste.
+//
+// Les trois réconciliations savent FERMER, aucune ne sait rouvrir. Une fermeture erronée
+// enregistrée dans le navigateur devenait donc définitive : corriger la règle d'appariement
+// ne suffisait pas, le mal était déjà dans les données. C'est ce qu'a vécu dudus67 — sa vente
+// à découvert sur PXT avait disparu, et aucun rechargement ne la ramenait.
+//
+// Strictement ADDITIF : on ne rouvre que ce qui MANQUE pour retrouver le solde signé de la
+// série, jamais davantage, et on ne ferme jamais rien. Une erreur de ce rattrapage ne peut
+// donc pas faire disparaître de position — seulement en laisser une de trop, ce qui se voit.
+//
+// Restreint aux échéances À VENIR et aux séries sans assignation ni exercice : là, le solde
+// signé suffit à dire ce qui est ouvert, sans qu'une expiration ou une livraison ait pu
+// intervenir. Ailleurs, on laisse faire les mécanismes existants.
+//
+// Les jambes rouvertes sont les plus RÉCENTES : les clôtures consomment les lots les plus
+// anciens d'abord.
+function repairOpenLegs() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cle = t => normTicker(t.ticker) + '|' + t.type + '|' + t.strike + '|' + t.expiry;
+  const series = {};
+  transactions.forEach(t => { (series[cle(t)] = series[cle(t)] || []).push(t); });
+
+  Object.values(series).forEach(legs => {
+    if (!legs[0].expiry || new Date(legs[0].expiry) < today) return;
+    if (legs.some(t => t.assigned || t.exercised)) return;
+
+    const q = t => Math.abs(t.qty || 0);
+    const net = legs.reduce((s, t) => s + (t.action === 'BUY' ? 1 : -1) * q(t), 0);
+    if (net === 0) return;
+    const sens = net > 0 ? 'BUY' : 'SELL';
+
+    const ouvert = legs.filter(t => t.action === sens && t.status === 'Open').reduce((s, t) => s + q(t), 0);
+    let manque = Math.abs(net) - ouvert;
+    if (manque <= 0) return; // rien ne manque : on ne touche à rien
+
+    legs.filter(t => t.action === sens && t.status !== 'Open')
+      .sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')))
+      .forEach(t => {
+        if (manque <= 0) return;
+        t.status = 'Open';
+        manque -= q(t);
+      });
+  });
+}
+
 // Requalifie en « Clôturée » toute option ACHETÉE que plus rien ne maintient ouverte.
 //
 // Une même série peut porter successivement une jambe longue puis une jambe courte : acheter
@@ -6132,6 +6178,7 @@ function loadAppData() {
     });
     reconcileRolledSells();
     reconcileClosedLongs();
+    repairOpenLegs();
     // Marque expirée toute option ouverte dont la date d'expiration est passée
     markExpiredOptions();
     return transactions.length > 0;
@@ -6974,6 +7021,7 @@ function ibMergeData(parsed) {
   // Toute option ouverte déjà expirée → Expired (longs calls non clôturés, etc.)
   reconcileRolledSells();
   reconcileClosedLongs();
+  repairOpenLegs();
   markExpiredOptions();
 
   // Exercices/assignations détectés à l'import → fermer + flag (badge "EXERCISED"/"ASSIGNED").
