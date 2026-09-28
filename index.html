@@ -5969,6 +5969,135 @@ function confirmGoal() {
 const IB_STORAGE_KEY   = 'ib_flexquery_config';
 const DATA_STORAGE_KEY = 'optionstrack_data'; // clé de données prod (V2 unifiée)
 
+// ══════════════════════════════════════════════════════════════
+//  MULTI-COMPTE — étape 1 : registre et cloisonnement du stockage
+// ══════════════════════════════════════════════════════════════
+//
+// Chaque compte reçoit un EMPLACEMENT (slot) stable, et ses données vivent sous une clé qui
+// le porte. Rien ne change encore côté membre — il n'a qu'un seul emplacement — mais toutes
+// les lectures et écritures passent désormais par oltKey().
+//
+// Le slot est délibérément DISTINCT du numéro de compte IBKR. Deux raisons :
+//   • des données peuvent être antérieures à la capture de l'identifiant, qui n'a pas
+//     toujours existé — il n'y aurait alors rien pour nommer la clé ;
+//   • le numéro peut arriver plus tard, au premier import. Si la clé en dépendait, elle
+//     changerait sous les pieds des données et le lien serait perdu.
+// Le slot ne bouge jamais ; seule son étiquette (numéro, nom) se met à jour.
+const ACCOUNTS_KEY = 'olt_accounts';
+const ACTIVE_KEY   = 'olt_active_account';
+
+function oltAccounts() {
+  try { const a = JSON.parse(localStorage.getItem(ACCOUNTS_KEY)); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+
+function oltSaveAccounts(list) {
+  try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list)); }
+  catch (e) { console.warn('[OLT Tracker] registre des comptes non sauvegardé', e); }
+}
+
+// Emplacement actif. En crée un si le registre est vide : toute écriture a besoin d'un slot,
+// et sans cette création paresseuse un tout premier import irait dans une clé non préfixée
+// que plus rien ne relirait ensuite.
+function oltActiveSlot() {
+  const list = oltAccounts();
+  if (!list.length) {
+    const neuf = [{ slot: 'a1', accountId: '', name: '', addedAt: new Date().toISOString().slice(0, 10) }];
+    oltSaveAccounts(neuf);
+    try { localStorage.setItem(ACTIVE_KEY, 'a1'); } catch {}
+    return 'a1';
+  }
+  const actif = localStorage.getItem(ACTIVE_KEY);
+  if (list.some(a => a.slot === actif)) return actif;
+  try { localStorage.setItem(ACTIVE_KEY, list[0].slot); } catch {}
+  return list[0].slot;
+}
+
+// Clé de stockage propre à l'emplacement actif.
+function oltKey(base) { return base + '__' + oltActiveSlot(); }
+
+// Étiquette l'emplacement actif avec ce que dit le relevé. Appelée à chaque import.
+function oltTagActiveAccount(id, nom) {
+  const slot = oltActiveSlot();
+  let touche = false;
+  const maj = oltAccounts().map(a => {
+    if (a.slot !== slot) return a;
+    const n = { ...a };
+    if (id  && n.accountId !== id)  { n.accountId = id;  touche = true; }
+    if (nom && n.name      !== nom) { n.name      = nom; touche = true; }
+    return n;
+  });
+  if (touche) oltSaveAccounts(maj);
+}
+
+// Clés orphelines d'anciennes versions : plus aucun code ne les lit, mais elles occupent du
+// quota localStorage — précisément ce qui ferait échouer une sauvegarde sur un gros historique.
+//
+// Le nettoyage est automatique au chargement : demander à chaque membre de coller une commande
+// dans la console n'est pas une option.
+const OLT_LEGACY_KEYS = ['optionstrack_data_v1'];
+
+// Garde-fou indispensable : on ne supprime QUE si les données actuelles existent ET contiennent
+// des trades. Un membre resté sur une très ancienne version pourrait n'avoir son historique que
+// là ; dans ce cas on laisse la clé intacte et on le signale, plutôt que d'effacer en silence.
+function oltPurgeLegacy() {
+  let actuel = null;
+  try { actuel = JSON.parse(localStorage.getItem(oltKey(DATA_STORAGE_KEY)) || 'null'); } catch {}
+  const peuple = !!(actuel && Array.isArray(actuel.transactions) && actuel.transactions.length);
+
+  OLT_LEGACY_KEYS.forEach(k => {
+    let v;
+    try { v = localStorage.getItem(k); } catch { return; }
+    if (v == null) return;
+    if (!peuple) {
+      console.warn('[OLT Tracker] clé ancienne « ' + k + ' » CONSERVÉE : les données actuelles sont vides, '
+        + 'elle contient peut-être le seul historique de ce membre.');
+      return;
+    }
+    try {
+      localStorage.removeItem(k);
+      console.log('[OLT Tracker] clé ancienne « ' + k + ' » supprimée — ' + Math.round(v.length / 1024) + ' Ko libérés');
+    } catch (e) { console.warn('[OLT Tracker] suppression impossible : ' + k, e); }
+  });
+}
+
+// Rattache les données d'avant le multi-compte au premier emplacement.
+//
+// Séquence volontairement prudente : on écrit la nouvelle clé, on RELIT pour vérifier, et
+// seulement alors on efface l'ancienne. Si quoi que ce soit échoue — quota dépassé, écriture
+// partielle — l'ancienne clé reste intacte et le membre ne perd rien. C'est le seul moment
+// du chantier où des données peuvent disparaître : il mérite d'être défensif.
+function oltMigrateStorage() {
+  let ancien;
+  try { ancien = localStorage.getItem(DATA_STORAGE_KEY); } catch { return; }
+  if (!ancien) return;
+
+  const slot  = oltActiveSlot();
+  const cible = DATA_STORAGE_KEY + '__' + slot;
+
+  // Déjà migré lors d'une session précédente : l'ancienne clé n'est qu'un résidu.
+  if (localStorage.getItem(cible)) {
+    try { localStorage.removeItem(DATA_STORAGE_KEY); } catch {}
+    return;
+  }
+
+  try {
+    localStorage.setItem(cible, ancien);
+    if (localStorage.getItem(cible) !== ancien) throw new Error('relecture différente de l écriture');
+    localStorage.removeItem(DATA_STORAGE_KEY);
+    // Le numéro de compte se lit dans les données migrées : on en étiquette l'emplacement.
+    try {
+      const p = JSON.parse(ancien);
+      oltTagActiveAccount((p && p.accountKPI && p.accountKPI._accountId) || '',
+                          (p && p.accountKPI && p.accountKPI._accountName) || '');
+    } catch {}
+    console.log('[OLT Tracker] données rattachées à l\'emplacement ' + slot);
+  } catch (e) {
+    try { localStorage.removeItem(cible); } catch {}
+    console.warn('[OLT Tracker] migration impossible — données laissées en place, rien n\'est perdu', e);
+  }
+}
+
 function saveAppData() {
   try {
     const payload = {
@@ -5986,7 +6115,7 @@ function saveAppData() {
     };
     const json = JSON.stringify(payload);
     const sizeKB = Math.round(json.length / 1024);
-    localStorage.setItem(DATA_STORAGE_KEY, json);
+    localStorage.setItem(oltKey(DATA_STORAGE_KEY), json);
     console.log(`[OLT Tracker] saveAppData OK — ${transactions.length} trades, ${sizeKB}KB`);
   } catch(e) {
     console.error('[OLT Tracker] saveAppData FAILED:', e.name, e.message);
@@ -6001,7 +6130,7 @@ function saveAppData() {
           assigned: t.assigned, exercised: t.exercised, assignedQty: t.assignedQty,
         }));
         const payload2 = { transactions: slim, accountKPI, monthlyGoal, tickerAliases: TICKER_ALIASES, stockPositions, stockTrades, stockDividends, stockTransfers, savedAt: new Date().toISOString(), slim: true };
-        localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(payload2));
+        localStorage.setItem(oltKey(DATA_STORAGE_KEY), JSON.stringify(payload2));
         console.log('[OLT Tracker] saveAppData slim OK');
       } catch(e2) {
         console.error('[OLT Tracker] saveAppData slim also failed:', e2.message);
@@ -6165,7 +6294,7 @@ function markExpiredOptions() {
 
 function loadAppData() {
   try {
-    const raw = localStorage.getItem(DATA_STORAGE_KEY);
+    const raw = localStorage.getItem(oltKey(DATA_STORAGE_KEY));
     if (!raw) return false;
     const payload = JSON.parse(raw);
     if (payload.transactions && Array.isArray(payload.transactions)) {
@@ -7506,6 +7635,8 @@ function ibMergeData(parsed) {
   if (_end && (!accountKPI._lastReportEnd || _end > accountKPI._lastReportEnd)) accountKPI._lastReportEnd = _end;
   if (parsed.accountId) accountKPI._accountId = parsed.accountId;
   if (parsed.accountName) accountKPI._accountName = parsed.accountName;
+  // L'emplacement porte désormais le numéro et le nom lus dans le relevé.
+  oltTagActiveAccount(parsed.accountId || '', parsed.accountName || '');
   if (parsed.baseCurrency) { accountKPI._baseCurrency = parsed.baseCurrency; BASE_CCY = parsed.baseCurrency; }
   if (parsed.twr !== null && parsed.twr !== undefined) accountKPI.twrReturn = parsed.twr;
 
@@ -9353,6 +9484,11 @@ async function ibAutoSync() {
   renderYearTabs();
 
   updateSidebarDot();
+
+  // Rattachement des données d'avant le multi-compte — doit précéder toute lecture.
+  oltMigrateStorage();
+  // Puis seulement : le nettoyage vérifie les données MIGRÉES pour décider s'il peut purger.
+  oltPurgeLegacy();
 
   // Load persisted data BEFORE rendering the dashboard
   const hadData = loadAppData();
