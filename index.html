@@ -2694,7 +2694,7 @@ function editMonthlyCapital(mKey) {
   // primes seules, si bien qu'éditer le capital avec « inclure les dividendes » coché
   // renvoyait un rendement sur une autre base, jusqu'au prochain rendu complet.
   const perfNet   = parseFloat(capEl.dataset.perfnet || '0');
-  const stored    = localStorage.getItem('olt_cap_override_' + mKey);
+  const stored    = localStorage.getItem(oltKey('olt_cap_override_' + mKey));
   const current   = stored !== null ? parseFloat(stored) : computed;
 
   const input = document.createElement('input');
@@ -2715,10 +2715,10 @@ function editMonthlyCapital(mKey) {
     const useComputed = isNaN(v) || v <= 0 || Math.abs(v - computed) < 0.005;
     const effective = useComputed ? computed : v;
     if (useComputed) {
-      localStorage.removeItem('olt_cap_override_' + mKey);
+      localStorage.removeItem(oltKey('olt_cap_override_' + mKey));
       if (subEl) { subEl.textContent = 'au 1er (calculé auto)'; subEl.style.color = 'var(--c-dim)'; }
     } else {
-      localStorage.setItem('olt_cap_override_' + mKey, v);
+      localStorage.setItem(oltKey('olt_cap_override_' + mKey), v);
       if (subEl) { subEl.textContent = '✏ Capital personnalisé'; subEl.style.color = '#00e5cc'; }
     }
     // Update capital display
@@ -3165,13 +3165,13 @@ function growthUpdate() {
 // ── Préférences du projecteur (les saisies survivent d'une visite à l'autre)
 const GROWTH_PREFS_KEY = 'olt_growth_prefs';
 function growthLoadPrefs() {
-  try { return JSON.parse(localStorage.getItem(GROWTH_PREFS_KEY)) || {}; } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(oltKey(GROWTH_PREFS_KEY))) || {}; } catch { return {}; }
 }
 function growthSavePrefs() {
   const v = id => { const e = document.getElementById(id); return e ? e.value : undefined; };
   const num = id => { const x = parseFloat(v(id)); return Number.isFinite(x) ? x : undefined; };
   try {
-    localStorage.setItem(GROWTH_PREFS_KEY, JSON.stringify({
+    localStorage.setItem(oltKey(GROWTH_PREFS_KEY), JSON.stringify({
       yieldPct: num('g-yield'), reinvest: num('g-reinvest'), deposit: num('g-deposit'),
       taxPct: num('g-tax'), horizon: window._growthHorizon,
       goalRevenue: num('goal-revenue'), goalNet: v('goal-net'),
@@ -3648,7 +3648,7 @@ function oltMonthCapital(m) {
     .filter(t => t.date < monthStart)
     .reduce((s, t) => s + txNet(t), 0);
   const computed = deposits + premiumsBefore;
-  const override = localStorage.getItem('olt_cap_override_' + m.replace(/-/g, ''));
+  const override = localStorage.getItem(oltKey('olt_cap_override_' + m.replace(/-/g, '')));
   return {
     computed,
     effective: override !== null ? parseFloat(override) : computed,
@@ -6030,6 +6030,41 @@ function oltTagActiveAccount(id, nom) {
   if (touche) oltSaveAccounts(maj);
 }
 
+// Rattache les PRÉFÉRENCES d'avant le multi-compte au premier emplacement.
+//
+// Elles ne portent pas d'historique, mais les abandonner obligerait le membre à ressaisir sa
+// configuration Flex Query — jeton compris — et ses capitaux personnalisés mois par mois. On
+// les déplace donc, avec la même prudence que les données.
+//
+// Les clés sont d'abord RECENSÉES puis déplacées : modifier localStorage pendant qu'on
+// l'énumère décale les index et ferait sauter des entrées.
+function oltMigratePrefs() {
+  const suffixe = '__' + oltActiveSlot();
+  const aDeplacer = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || k.includes('__')) continue; // déjà rattachée à un emplacement
+      if (k === IB_STORAGE_KEY || k === GROWTH_PREFS_KEY || k.startsWith('olt_cap_override_')) aDeplacer.push(k);
+    }
+  } catch { return; }
+
+  aDeplacer.forEach(k => {
+    const cible = k + suffixe;
+    try {
+      // Déjà rattachée lors d'une session précédente : l'ancienne n'est qu'un résidu.
+      if (localStorage.getItem(cible) !== null) { localStorage.removeItem(k); return; }
+      const v = localStorage.getItem(k);
+      localStorage.setItem(cible, v);
+      if (localStorage.getItem(cible) !== v) throw new Error('relecture différente de l écriture');
+      localStorage.removeItem(k);
+    } catch (e) {
+      try { localStorage.removeItem(cible); } catch {}
+      console.warn('[OLT Tracker] préférence non rattachée, laissée en place : ' + k, e);
+    }
+  });
+}
+
 // Clés orphelines d'anciennes versions : plus aucun code ne les lit, mais elles occupent du
 // quota localStorage — précisément ce qui ferait échouer une sauvegarde sur un gros historique.
 //
@@ -6355,11 +6390,11 @@ function loadAppData() {
 }
 
 function ibLoadConfig() {
-  try { return JSON.parse(localStorage.getItem(IB_STORAGE_KEY)) || {}; }
+  try { return JSON.parse(localStorage.getItem(oltKey(IB_STORAGE_KEY))) || {}; }
   catch { return {}; }
 }
 function ibSaveConfig(cfg) {
-  localStorage.setItem(IB_STORAGE_KEY, JSON.stringify(cfg));
+  localStorage.setItem(oltKey(IB_STORAGE_KEY), JSON.stringify(cfg));
 }
 
 function ibIsConnected() {
@@ -8167,7 +8202,7 @@ function renderIBConnect() {
           annuler: 'Annuler',
         });
         if (!ok) return;
-        localStorage.removeItem(IB_STORAGE_KEY);
+        localStorage.removeItem(oltKey(IB_STORAGE_KEY));
         syncLogLines = [];
         updateSidebarDot();
         renderIBConnect();
@@ -9487,6 +9522,7 @@ async function ibAutoSync() {
 
   // Rattachement des données d'avant le multi-compte — doit précéder toute lecture.
   oltMigrateStorage();
+  oltMigratePrefs();
   // Puis seulement : le nettoyage vérifie les données MIGRÉES pour décider s'il peut purger.
   oltPurgeLegacy();
 
