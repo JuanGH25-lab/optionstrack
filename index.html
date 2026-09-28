@@ -2425,6 +2425,7 @@ function computeRankingStats() {
           transactions.forEach(b => {
             if (b.action !== 'BUY' || b.ticker !== t.ticker || b.type !== t.type || b.date !== f.date) return;
             if (b.time && f.time && Math.abs(toMinCs(b.time) - toMinCs(f.time)) > 60) return;
+            if (memeSerieQue(b, t) && longAvant(t) <= 0) return;
             if (multiSeries && b.strike !== t.strike) return;
             if (!rollBuys.includes(b)) rollBuys.push(b);
           });
@@ -2493,6 +2494,7 @@ function renderRanking() {
       transactions.forEach(b => {
         if (b.action !== 'BUY' || b.ticker !== g.ticker || b.type !== g.type || b.date !== f.date) return;
         if (b.time && f.time && Math.abs(toMinRk(b.time) - toMinRk(f.time)) > 60) return;
+        if (memeSerieQue(b, g) && longAvant(g) <= 0) return;
         if (multiSeries && b.strike !== g.strike) return;
         if (!rollBuys.includes(b)) rollBuys.push(b);
       });
@@ -5086,6 +5088,7 @@ function posSortStamp(g) {
     transactions.forEach(b => {
       if (b.action !== 'BUY' || b.ticker !== g.ticker || b.type !== g.type || b.date !== f.date) return;
       if (b.time && f.time && Math.abs(toMin(b.time) - toMin(f.time)) > 60) return;
+      if (memeSerieQue(b, g) && longAvant(g) <= 0) return;
       if (multiSeries && b.strike !== g.strike) return;
       if (!rollBuys.includes(b)) rollBuys.push(b);
     });
@@ -5154,6 +5157,7 @@ function renderPositions() {
       transactions.forEach(b => {
         if (b.action !== 'BUY' || b.ticker !== g.ticker || b.type !== g.type || b.date !== f.date) return;
         if (b.time && f.time && Math.abs(toMinRoll(b.time) - toMinRoll(f.time)) > 60) return;
+        if (memeSerieQue(b, g) && longAvant(g) <= 0) return;
         if (multiSeries && b.strike !== g.strike) return;
         if (!rollBuys.includes(b)) rollBuys.push(b);
       });
@@ -5317,6 +5321,7 @@ function renderPositions() {
             transactions.forEach(b => {
               if (b.action !== 'BUY' || b.ticker !== t.ticker || b.type !== t.type || b.date !== f.date) return;
               if (b.time && f.time && Math.abs(toMinPos(b.time) - toMinPos(f.time)) > 60) return;
+              if (memeSerieQue(b, t) && longAvant(t) <= 0) return;
               if (multiSeries && b.strike !== t.strike) return;
               if (!rollBuys.includes(b)) rollBuys.push(b);
             });
@@ -6009,6 +6014,38 @@ function saveAppData() {
 // Couvre les longs calls jamais clôturés (ex. renommage de ticker SENS→SENS1, ou
 // la réconciliation qui ne traite que les SELL) et toute position non réconciliée.
 // Idempotent : ne touche que les statuts "Open" déjà expirés.
+// Un roulement change TOUJOURS de strike ou d'échéance : on rachète le put 50 de septembre
+// pour vendre le put 48 d'octobre. Un achat portant EXACTEMENT le même contrat que la vente
+// n'est donc pas un roulement — c'est l'ouverture ou la clôture de cette série-là.
+//
+// Sans ce test, tout achat du même jour à moins d'une heure était compté comme un coût de
+// roulement, y compris un aller-retour intrajournalier sans rapport : la vente de dudus67 sur
+// PXT affichait -1,1 % de rendement alors qu'elle avait bien encaissé sa prime.
+function memeSerieQue(b, t) {
+  return b.strike === t.strike && b.expiry === t.expiry;
+}
+
+// Position détenue sur la série JUSTE AVANT cette vente.
+//
+// C'est ce qui distingue les deux situations que « même série » confondait :
+//
+//   position > 0  — on était LONG, la vente clôture cet achat. Aller-retour : le coût
+//                   d'achat doit bien être déduit, sinon on afficherait la prime de vente
+//                   comme un gain net alors qu'il a fallu payer les contrats.
+//   position <= 0 — la vente OUVRE un short. Un achat de la même série ne la concerne pas.
+//
+// Appelée seulement quand memeSerieQue() a déjà répondu vrai, donc une poignée de fois par
+// rendu : le parcours complet des transactions y est sans conséquence.
+function longAvant(t) {
+  const cle = x => normTicker(x.ticker) + '|' + x.type + '|' + x.strike + '|' + x.expiry;
+  const k = cle(t), ord = x => x.date + (x.time || '');
+  const borne = ord(t);
+  return transactions.reduce((p, x) => {
+    if (cle(x) !== k || ord(x) >= borne) return p;
+    return p + (x.action === 'BUY' ? 1 : -1) * Math.abs(x.qty || 0);
+  }, 0);
+}
+
 // Un rachat ne ferme une vente que s'il lui est POSTÉRIEUR.
 //
 // Le test portait sur la seule DATE (b.date >= t.date), donc à la journée près : un achat
