@@ -6990,7 +6990,98 @@ function ibParseXML(xmlText) {
 }
 
 // ── Merge parsed IB data into transactions[]
+// Confirmation aux couleurs de l'app, en remplacement de confirm().
+//
+// Le confirm() natif est synchrone, une modale ne l'est pas : cette fonction rend une
+// PROMESSE. C'est la raison pour laquelle la vérification de compte a quitté ibMergeData
+// pour remonter dans les deux chemins d'import, qui eux peuvent attendre.
+//
+// Réutilise les classes de modale déjà en place — .modal-overlay, .modal, .modal-head,
+// .form-foot, .btn — donc aucune feuille de style à ajouter et l'aspect suit le thème.
+function oltConfirm({ titre, corps, note, ok = 'Continuer', annuler = 'Annuler', danger = false }) {
+  return new Promise(resolve => {
+    const col = danger ? 'var(--red)' : 'var(--orange)';
+    const rgb = danger ? '248,81,73' : '240,136,62';
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open';
+    ov.innerHTML = `
+      <div class="modal" style="width:470px">
+        <div class="modal-head">
+          <div style="font-weight:600;font-size:14px;color:${col}">${titre}</div>
+          <button class="close-btn" data-olt="non">✕</button>
+        </div>
+        <div style="padding:22px 24px">
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.65">${corps}</div>
+          ${note ? '<div style="margin-top:16px;padding:10px 14px;background:rgba(' + rgb + ',0.08);border:1px solid rgba(' + rgb + ',0.25);border-radius:8px;font-size:12px;color:' + col + ';line-height:1.55">' + note + '</div>' : ''}
+        </div>
+        <div class="form-foot">
+          <button class="btn btn-sec" data-olt="non">${annuler}</button>
+          <button class="btn" data-olt="oui" style="background:${col};color:#fff;border-color:${col}">${ok}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const fin = v => { document.removeEventListener('keydown', esc); ov.remove(); resolve(v); };
+    const esc = e => { if (e.key === 'Escape') fin(false); };
+    ov.querySelectorAll('[data-olt]').forEach(b => b.addEventListener('click', () => fin(b.dataset.olt === 'oui')));
+    // Clic hors de la fenêtre = annuler, comme sur les autres modales de l'app.
+    ov.addEventListener('click', e => { if (e.target === ov) fin(false); });
+    document.addEventListener('keydown', esc);
+    // Le refus prend le focus : ces imports sont des erreurs de fichier dans la quasi-totalité
+    // des cas, et Entrée ne doit pas déclencher la fusion.
+    ov.querySelector('.btn-sec[data-olt="non"]').focus();
+  });
+}
+
+// L'identifiant vient du relevé : on l'échappe avant de l'injecter dans la modale.
+const oltEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+// Demande confirmation avant de mélanger deux comptes. Rend true si le membre accepte.
+function ibConfirmAccountMix(entrant, actuel) {
+  return oltConfirm({
+    titre: '⚠ Relevé d\'un autre compte',
+    corps: 'Ce relevé appartient au compte <strong style="color:var(--text)">' + oltEsc(entrant) + '</strong>, '
+         + 'alors que vos données actuelles viennent du compte <strong style="color:var(--text)">' + oltEsc(actuel) + '</strong>.'
+         + '<br><br>Annulez si vous vouliez importer un autre fichier. Pour suivre un second compte, '
+         + 'supprimez d\'abord toutes les données depuis <strong style="color:var(--text)">Connect IB Account</strong> '
+         + '— le suivi de plusieurs comptes en parallèle arrive prochainement.',
+    note: '⚠ Continuer mélangerait les trades des deux comptes de façon irréversible : primes, positions et KPI seraient additionnés.',
+    ok: 'Mélanger quand même',
+    annuler: 'Annuler',
+    danger: true,
+  });
+}
+
+// Vrai si le relevé vient d'un AUTRE compte que celui déjà chargé.
+// Renvoie l'identifiant en place, ou null quand il n'y a pas de conflit.
+//
+// Cas volontairement laissés passer :
+//   • aucun compte enregistré — premier import, ou données antérieures à la capture de
+//     l'identifiant (elle n'a pas toujours existé) ;
+//   • relevé sans identifiant — certains CSV partiels n'en portent pas.
+// Dans les deux cas on ne peut rien affirmer, et bloquer serait pire que laisser passer.
+function ibAccountConflict(parsed) {
+  const actuel = (accountKPI._accountId || '').trim();
+  const entrant = (parsed && parsed.accountId ? String(parsed.accountId) : '').trim();
+  if (!actuel || !entrant) return null;
+  return actuel.toUpperCase() === entrant.toUpperCase() ? null : actuel;
+}
+
 function ibMergeData(parsed) {
+  // Deux comptes fusionnaient en silence : l'import écrasait simplement _accountId et
+  // versait les trades dans le même jeu de données. Rien ne le signalait, et c'est
+  // irréversible — une fois mêlés, les trades des deux comptes ne se distinguent plus.
+  //
+  // En attendant le vrai multi-compte, on demande confirmation. Le refus est le choix par
+  // défaut : l'immense majorité de ces imports sont des erreurs de fichier.
+  // Refus par défaut, sans rien demander : la confirmation est asynchrone et appartient donc
+  // aux appelants, qui posent _accountConfirmed une fois le membre d'accord. Un futur appelant
+  // qui oublierait cette étape serait bloqué plutôt que de fusionner en silence.
+  const _conflit = ibAccountConflict(parsed);
+  if (_conflit && !parsed._accountConfirmed) {
+    return { added: 0, skipped: 0, total: (parsed.trades || []).length, kpiUpdates: {},
+             depositsTotal: 0, interestTotal: 0, blockedBy: _conflit };
+  }
+
   const added = [];
   const skipped = [];
 
@@ -7540,7 +7631,19 @@ async function ibSync() {
     }
     if (parsed.cashTxDetails.length > 0) ibLog(`💳 ${parsed.cashTxDetails.length} transaction(s) cash parsée(s)`, 'info');
 
+    const _cfl = ibAccountConflict(parsed);
+    if (_cfl) {
+      if (!await ibConfirmAccountMix(parsed.accountId, _cfl)) {
+        ibLog(`⛔ Import annulé : ce relevé vient du compte ${parsed.accountId}, vos données du compte ${_cfl}.`, 'warn');
+        return;
+      }
+      parsed._accountConfirmed = true;
+    }
     const merge = ibMergeData(parsed);
+    if (merge.blockedBy) {
+      ibLog(`⛔ Import annulé : ce relevé vient du compte ${parsed.accountId}, vos données du compte ${merge.blockedBy}.`, 'warn');
+      return;
+    }
     ibLog(`✅ ${merge.added} nouveau(x) trade(s) ajouté(s) · ${merge.skipped} doublon(s) ignoré(s)`, 'ok');
     if (merge.depositsTotal > 0) ibLog(`✅ Dépôts mis à jour : ${fmt(merge.depositsTotal)}`, 'ok');
     if (merge.interestTotal !== 0) ibLog(`✅ Intérêts mis à jour : ${fmt(merge.interestTotal)}`, 'ok');
@@ -7924,8 +8027,15 @@ function renderIBConnect() {
       });
     }
     if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        if (!confirm('Déconnecter le compte IB ? Les données importées resteront dans l\'app.')) return;
+      clearBtn.addEventListener('click', async () => {
+        const ok = await oltConfirm({
+          titre: 'Déconnecter le compte IB',
+          corps: 'Le jeton et l\'identifiant de requête seront effacés, et la synchronisation automatique cessera.'
+               + '<br><br>Vos <strong style="color:var(--text)">données importées restent intactes</strong> : trades, KPI et positions ne bougent pas.',
+          ok: 'Déconnecter',
+          annuler: 'Annuler',
+        });
+        if (!ok) return;
         localStorage.removeItem(IB_STORAGE_KEY);
         syncLogLines = [];
         updateSidebarDot();
@@ -8894,9 +9004,21 @@ async function xmlParseFile() {
   }
 }
 
-function xmlApplyData() {
+async function xmlApplyData() {
   if (!xmlPendingData) return;
+  const _cfl = ibAccountConflict(xmlPendingData);
+  if (_cfl) {
+    if (!await ibConfirmAccountMix(xmlPendingData.accountId, _cfl)) {
+      xmlShowLog(`⛔ Import annulé : ce relevé vient du compte ${xmlPendingData.accountId}, vos données du compte ${_cfl}.`, 'warn');
+      return;
+    }
+    xmlPendingData._accountConfirmed = true;
+  }
   const merge = ibMergeData(xmlPendingData);
+  if (merge.blockedBy) {
+    xmlShowLog(`⛔ Import annulé : ce relevé vient du compte ${xmlPendingData.accountId}, vos données du compte ${merge.blockedBy}.`, 'warn');
+    return;
+  }
   xmlShowLog(`✅ ${merge.added} trade(s) ajouté(s) · ${merge.skipped} doublon(s) ignoré(s)`, 'ok');
   if (merge.depositsTotal > 0) xmlShowLog(`✅ Dépôts mis à jour : ${fmt(merge.depositsTotal)}`, 'ok');
   if (merge.interestTotal !== 0) xmlShowLog(`✅ Intérêts mis à jour : ${fmt(merge.interestTotal)}`, 'ok');
@@ -8978,7 +9100,7 @@ function renderDeleteByYearList() {
   if (btn) btn.style.display = 'none';
 }
 
-function deleteSelectedYears() {
+async function deleteSelectedYears() {
   const container = document.getElementById('delete-by-year-list');
   const info = document.getElementById('delete-years-info');
   if (!container) return;
@@ -8989,7 +9111,19 @@ function deleteSelectedYears() {
   const inYear = d => checked.includes((d || '').slice(0, 4));
   const srcs   = yearDataSources();
   const total  = srcs.reduce((s, src) => s + src.arr.filter(x => inYear(x.date)).length, 0);
-  if (!confirm(`Supprimer ${total} élément(s) pour ${checked.join(', ')} ?\n\nCette action est irréversible.`)) return;
+  const _detail = srcs.map(src => ({ l: src.lbl, n: src.arr.filter(x => inYear(x.date)).length }))
+    .filter(x => x.n > 0).map(x => x.n + ' ' + x.l).join(' · ');
+  if (!await oltConfirm({
+    titre: '⚠ Supprimer les données de ' + checked.join(', '),
+    corps: '<strong style="color:var(--text)">' + total + ' élément(s)</strong> seront effacés'
+         + (_detail ? ' — ' + _detail : '')
+         + ', ainsi que les dépôts, intérêts et KPI de '
+         + (checked.length > 1 ? 'ces années' : 'cette année') + '.',
+    note: '⚠ Cette action est irréversible.',
+    ok: 'Supprimer',
+    annuler: 'Annuler',
+    danger: true,
+  })) return;
 
   // Actions, dividendes et transferts survivaient à la « suppression » de leur année : ils
   // continuaient d'alimenter le PRU et la page Actions & ETF, en contradiction avec des
