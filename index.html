@@ -259,6 +259,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);dis
 .logo-icon{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
 .logo-text{font-size:21px;font-weight:700;letter-spacing:-0.3px;}
 .sb-user{padding:14px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}
+.sb-accounts{padding:10px 20px;border-bottom:1px solid var(--border);}
+.sb-accounts-row{display:flex;gap:6px;align-items:center;}
+.sb-accounts select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text);cursor:pointer;outline:none;}
+.sb-accounts select:hover{border-color:var(--blue);}
+.sb-gear{flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0;}
+.sb-gear:hover{border-color:var(--blue);color:var(--text);}
 .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex-shrink:0;}
 .u-name{font-size:12px;font-weight:500;}
 .u-id{font-size:11px;color:var(--text-muted);}
@@ -469,6 +475,7 @@ tbody tr:hover{background:var(--surface2);}
       </div>
     </div>
   </div>
+  <div class="sb-accounts" id="sb-accounts" style="display:none"></div>
   <nav class="sb-nav">
     <div class="nav-section">Vue d'ensemble</div>
     <div class="nav-item active" data-page="dashboard">
@@ -508,7 +515,7 @@ tbody tr:hover{background:var(--surface2);}
     <div class="nav-section">Data</div>
     <div class="nav-item" data-page="ibconnect" id="nav-ibconnect">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a2.5 2.5 0 012.5 2.5V4h-5v-.5A2.5 2.5 0 018 1zm3.5 3v-.5a3.5 3.5 0 10-7 0V4H1v10h14V4h-3.5zM2 5h12v8H2V5z"/></svg>
-      <span style="flex:1">Connect IB Account</span>
+      <span style="flex:1">Import Relevés & Flex Query</span>
       <span class="ib-status-dot disconnected" id="sb-ib-dot"></span>
     </div>
   </nav>
@@ -1342,7 +1349,7 @@ function updateExpiryBadge() {
 function setPage(page) {
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
-  const pt = document.getElementById('page-title'); if(pt) pt.textContent = {dashboard:'Tableau de bord',positions:'Positions Options',equities:'Actions & ETF',transactions:'Toutes les transactions',ranking:'Ranking',monthly:'Rapport Mensuel',calculator:'Calculateur',growth:'Objectifs & Croissance',ibconnect:'Connect IB Account'}[page]||'';
+  const pt = document.getElementById('page-title'); if(pt) pt.textContent = {dashboard:'Tableau de bord',positions:'Positions Options',equities:'Actions & ETF',transactions:'Toutes les transactions',ranking:'Ranking',monthly:'Rapport Mensuel',calculator:'Calculateur',growth:'Objectifs & Croissance',ibconnect:'Import Relevés & Flex Query'}[page]||'';
   ({dashboard:renderDashboard,positions:renderPositions,equities:renderEquities,transactions:renderTransactions,ranking:renderRanking,monthly:renderMonthly,ibconnect:renderIBConnect,calculator:renderCalculator,growth:renderGrowth}[page])();
   attachContentListeners();
   if ((page === 'positions' && positionsTab === 'list') || page === 'equities') {
@@ -6030,6 +6037,173 @@ function oltTagActiveAccount(id, nom) {
   if (touche) oltSaveAccounts(maj);
 }
 
+// Vide tout ce qui appartient au compte courant, en mémoire.
+//
+// Indispensable avant de charger un autre emplacement : loadAppData() ne remplit que ce que
+// le nouveau bloc contient, et sort sans rien toucher s'il n'existe pas. Sans cette remise à
+// zéro, on basculerait vers un compte vierge en gardant les trades du précédent affichés.
+//
+// Le volatil est purgé au même titre que les données : cours en direct, tickers résolus chez
+// Yahoo, PRU économique, journal de synchronisation. Ce sont eux qui, laissés en place,
+// feraient douter de tous les chiffres après un changement de compte.
+function oltResetState() {
+  transactions.length    = 0;
+  stockPositions.length  = 0;
+  stockTrades.length     = 0;
+  stockDividends.length  = 0;
+  stockTransfers.length  = 0;
+  pendingTransactions.length = 0;
+  syncLogLines.length    = 0;
+  expandedRows.clear();
+
+  [accountKPI, stockEconBasis, livePrices, resolvedYahoo, TICKER_ALIASES]
+    .forEach(o => Object.keys(o).forEach(k => delete o[k]));
+  // Forme initiale d'accountKPI : les écrans lisent ces champs sans les tester.
+  Object.assign(accountKPI, { navStart: 0, navEnd: 0, cashUSD: 0, deposited: 0,
+                              twrReturn: 0, interest: 0, commissions: 0, byYear: {} });
+
+  currentYear = 'ALL';
+  monthlyGoal = 500;
+  BASE_CCY    = 'USD';
+  hiddenSeries.clear();
+}
+
+// Cherche dans le registre un emplacement déjà associé à cet identifiant de compte. Rend
+// l'entrée trouvée, ou null si le compte est inédit — sert à distinguer un vrai nouveau
+// compte d'un compte déjà suivi qu'il suffit de rejoindre.
+function oltFindAccount(accountId) {
+  const id = String(accountId || '').trim().toUpperCase();
+  if (!id) return null;
+  return oltAccounts().find(a => String(a.accountId || '').trim().toUpperCase() === id) || null;
+}
+
+// Crée un emplacement et bascule dessus. Le compte courant est sauvegardé d'abord.
+function oltAddAccount(accountId, nom) {
+  saveAppData();
+  const list = oltAccounts();
+  // Numérotation continue : on repart du plus grand existant, jamais de la longueur — un
+  // emplacement supprimé libérerait sinon un numéro déjà utilisé par des clés orphelines.
+  const n = list.reduce((m, a) => Math.max(m, parseInt(String(a.slot).slice(1), 10) || 0), 0) + 1;
+  const slot = 'a' + n;
+  list.push({ slot, accountId: accountId || '', name: nom || '', addedAt: new Date().toISOString().slice(0, 10) });
+  oltSaveAccounts(list);
+  try { localStorage.setItem(ACTIVE_KEY, slot); } catch {}
+  oltResetState();
+  return slot;
+}
+
+// Bascule vers un emplacement existant.
+function oltSwitchAccount(slot) {
+  if (!slot || slot === oltActiveSlot()) return;
+  if (!oltAccounts().some(a => a.slot === slot)) return;
+  saveAppData();                                   // fige le compte qu'on quitte
+  try { localStorage.setItem(ACTIVE_KEY, slot); } catch {}
+  oltResetState();
+  loadAppData();                                   // lit désormais la clé du nouvel emplacement
+  reconcileRolledSells();
+  reconcileClosedLongs();
+  repairOpenLegs();
+  markExpiredOptions();
+  renderYearTabs();
+  updateExpiryBadge();
+  updateSidebarMeta();
+  updateSidebarDot();
+  setPage('dashboard');
+}
+
+// Sélecteur dans la barre latérale. Absent tant qu'il n'y a qu'un compte : inutile d'encombrer
+// la barre de la quasi-totalité des membres pour une fonction qu'ils n'utiliseront jamais.
+function renderAccountSwitcher() {
+  const el = document.getElementById('sb-accounts');
+  if (!el) return;
+  const list = oltAccounts();
+  if (list.length < 2) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  const actif = oltActiveSlot();
+  // Le nom est déjà affiché juste au-dessus (u-name) : le répéter dans chaque option
+  // n'apporterait rien et alourdirait un menu qu'on veut lire d'un coup d'œil.
+  const libelle = a => accountIdHidden ? '•••••••' : (a.accountId || 'Compte ' + a.slot);
+  el.style.display = '';
+  el.innerHTML = '<div class="sb-accounts-row"><select onchange="oltSwitchAccount(this.value)" title="Changer de compte">'
+    + list.map(a => '<option value="' + a.slot + '"' + (a.slot === actif ? ' selected' : '') + '>'
+        + libelle(a).replace(/</g, '&lt;') + '</option>').join('')
+    + '</select><button class="sb-gear" onclick="oltManageAccounts()" title="Gérer mes comptes">⚙</button></div>';
+}
+
+// Supprime un emplacement et tout ce qui lui est rattaché — clés __<slot> et son entrée dans
+// le registre. Le compte ACTIF refuse de s'auto-supprimer : il faudrait d'abord basculer
+// ailleurs, sans quoi l'app resterait à afficher des données qui n'existent plus nulle part.
+function oltDeleteAccount(slot) {
+  if (!slot || slot === oltActiveSlot()) return false;
+  try {
+    const suffixe = '__' + slot;
+    const aSupprimer = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.endsWith(suffixe)) aSupprimer.push(k);
+    }
+    aSupprimer.forEach(k => localStorage.removeItem(k));
+  } catch {}
+  oltSaveAccounts(oltAccounts().filter(a => a.slot !== slot));
+  return true;
+}
+
+// Modale de gestion des comptes, ouverte depuis la roue dentée à côté du sélecteur. Chaque
+// compte sauf l'actif propose une suppression, confirmée par oltConfirm (mêmes garde-fous que
+// le reste de l'app — pas de suppression en un clic sur une action irréversible).
+function oltManageAccounts() {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open';
+  document.body.appendChild(ov);
+  const fermer = () => { document.removeEventListener('keydown', esc); ov.remove(); };
+  const esc = e => { if (e.key === 'Escape') fermer(); };
+  const dessine = () => {
+    const list = oltAccounts();
+    const actif = oltActiveSlot();
+    ov.innerHTML = `
+      <div class="modal" style="width:420px">
+        <div class="modal-head">
+          <div style="font-weight:600;font-size:14px;color:var(--text)">Gérer mes comptes</div>
+          <button class="close-btn" data-olt="fermer">✕</button>
+        </div>
+        <div style="padding:6px 24px 20px">
+          ${list.map(a => `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="font-size:13px;color:var(--text)">
+                ${oltEsc(a.accountId || 'Compte ' + a.slot)}
+                ${a.slot === actif ? '<span style="margin-left:8px;font-size:11px;color:var(--text-muted)">actif</span>' : ''}
+              </div>
+              ${a.slot === actif ? ''
+                : '<button class="btn btn-sec" data-del="' + a.slot + '" style="padding:4px 10px;font-size:12px;color:var(--red);border-color:var(--red)">Supprimer</button>'}
+            </div>`).join('')}
+        </div>
+        <div class="form-foot">
+          <button class="btn btn-sec" data-olt="fermer">Fermer</button>
+        </div>
+      </div>`;
+    ov.querySelectorAll('[data-olt="fermer"]').forEach(b => b.addEventListener('click', fermer));
+    ov.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => supprimer(b.dataset.del)));
+  };
+  const supprimer = async slot => {
+    const compte = oltAccounts().find(a => a.slot === slot);
+    const choix = await oltConfirm({
+      titre: 'Supprimer ce compte',
+      corps: 'Supprimer définitivement le compte <strong style="color:var(--text)">'
+           + oltEsc(compte ? (compte.accountId || compte.slot) : slot) + '</strong> et toutes ses données ?',
+      note: 'Action irréversible : trades, dividendes, transferts et réglages de ce compte seront perdus.',
+      ok: 'Supprimer',
+      annuler: 'Annuler',
+      danger: true,
+    });
+    if (choix !== 'oui') return;
+    oltDeleteAccount(slot);
+    renderAccountSwitcher();
+    dessine();
+  };
+  ov.addEventListener('click', e => { if (e.target === ov) fermer(); });
+  document.addEventListener('keydown', esc);
+  dessine();
+}
+
 // Rattache les PRÉFÉRENCES d'avant le multi-compte au premier emplacement.
 //
 // Elles ne portent pas d'historique, mais les abandonner obligerait le membre à ressaisir sa
@@ -6403,6 +6577,7 @@ function ibIsConnected() {
 }
 
 function updateSidebarMeta() {
+  renderAccountSwitcher();
   if (transactions.length === 0) return;
   // Période couverte = ACTIVITÉ LA PLUS ANCIENNE, toutes données confondues → date du
   // dernier relevé importé (upload manuel ou synchro Flex).
@@ -7162,6 +7337,8 @@ function ibParseXML(xmlText) {
 //
 // Réutilise les classes de modale déjà en place — .modal-overlay, .modal, .modal-head,
 // .form-foot, .btn — donc aucune feuille de style à ajouter et l'aspect suit le thème.
+// Rend la clé du bouton choisi — 'oui' ou 'non' — plutôt qu'un booléen : plus lisible côté
+// appelant, et ouvert à un troisième choix si un jour une modale en a besoin.
 function oltConfirm({ titre, corps, note, ok = 'Continuer', annuler = 'Annuler', danger = false }) {
   return new Promise(resolve => {
     const col = danger ? 'var(--red)' : 'var(--orange)';
@@ -7185,10 +7362,10 @@ function oltConfirm({ titre, corps, note, ok = 'Continuer', annuler = 'Annuler',
       </div>`;
     document.body.appendChild(ov);
     const fin = v => { document.removeEventListener('keydown', esc); ov.remove(); resolve(v); };
-    const esc = e => { if (e.key === 'Escape') fin(false); };
-    ov.querySelectorAll('[data-olt]').forEach(b => b.addEventListener('click', () => fin(b.dataset.olt === 'oui')));
+    const esc = e => { if (e.key === 'Escape') fin('non'); };
+    ov.querySelectorAll('[data-olt]').forEach(b => b.addEventListener('click', () => fin(b.dataset.olt)));
     // Clic hors de la fenêtre = annuler, comme sur les autres modales de l'app.
-    ov.addEventListener('click', e => { if (e.target === ov) fin(false); });
+    ov.addEventListener('click', e => { if (e.target === ov) fin('non'); });
     document.addEventListener('keydown', esc);
     // Le refus prend le focus : ces imports sont des erreurs de fichier dans la quasi-totalité
     // des cas, et Entrée ne doit pas déclencher la fusion.
@@ -7199,19 +7376,33 @@ function oltConfirm({ titre, corps, note, ok = 'Continuer', annuler = 'Annuler',
 // L'identifiant vient du relevé : on l'échappe avant de l'injecter dans la modale.
 const oltEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-// Demande confirmation avant de mélanger deux comptes. Rend true si le membre accepte.
-function ibConfirmAccountMix(entrant, actuel) {
+// Deux issues au conflit de compte : rejoindre l'emplacement concerné, ou annuler. Rend
+// 'oui' | 'non'.
+//
+// Le mélange a été retiré : depuis que le multi-compte existe, il n'a plus d'usage légitime,
+// et il reste irréversible — une fois les trades de deux comptes mêlés, plus rien ne les
+// distingue. Proposer une option qu'on ne devrait jamais choisir, c'est inviter à la choisir.
+//
+// `connu` est l'entrée du registre déjà associée à ce compte, ou null s'il est inédit : sans
+// cette distinction, réimporter le relevé d'un compte déjà suivi créait un second emplacement
+// en double plutôt que de rejoindre le premier.
+function ibConfirmAccountMix(entrant, actuel, connu) {
   return oltConfirm({
-    titre: '⚠ Relevé d\'un autre compte',
-    corps: 'Ce relevé appartient au compte <strong style="color:var(--text)">' + oltEsc(entrant) + '</strong>, '
-         + 'alors que vos données actuelles viennent du compte <strong style="color:var(--text)">' + oltEsc(actuel) + '</strong>.'
-         + '<br><br>Annulez si vous vouliez importer un autre fichier. Pour suivre un second compte, '
-         + 'supprimez d\'abord toutes les données depuis <strong style="color:var(--text)">Connect IB Account</strong> '
-         + '— le suivi de plusieurs comptes en parallèle arrive prochainement.',
-    note: '⚠ Continuer mélangerait les trades des deux comptes de façon irréversible : primes, positions et KPI seraient additionnés.',
-    ok: 'Mélanger quand même',
+    titre: connu ? 'Basculer de compte' : 'Relevé d\'un autre compte',
+    corps: connu
+      ? 'Ce relevé appartient au compte <strong style="color:var(--text)">' + oltEsc(entrant) + '</strong>, '
+        + 'que vous suivez déjà dans OLT Tracker — alors que vos données actuelles viennent du compte '
+        + '<strong style="color:var(--text)">' + oltEsc(actuel) + '</strong>.'
+        + '<br><br>Basculez vers ce compte pour y importer le relevé.'
+      : 'Ce relevé appartient au compte <strong style="color:var(--text)">' + oltEsc(entrant) + '</strong>, '
+        + 'alors que vos données actuelles viennent du compte <strong style="color:var(--text)">' + oltEsc(actuel) + '</strong>.'
+        + '<br><br>Créez un <strong style="color:var(--text)">second compte</strong> pour le suivre séparément : '
+        + 'vous passerez de l\'un à l\'autre depuis la barre latérale, sans jamais mêler les deux.',
+    note: connu
+      ? 'Vos données actuelles ne seront pas modifiées : vous les retrouverez en rebasculant depuis la barre latérale.'
+      : 'Vos données actuelles ne seront pas modifiées. Annulez simplement si vous vouliez importer un autre fichier.',
+    ok: connu ? 'Basculer vers ce compte' : 'Créer un second compte',
     annuler: 'Annuler',
-    danger: true,
   });
 }
 
@@ -7237,11 +7428,11 @@ function ibMergeData(parsed) {
   //
   // En attendant le vrai multi-compte, on demande confirmation. Le refus est le choix par
   // défaut : l'immense majorité de ces imports sont des erreurs de fichier.
-  // Refus par défaut, sans rien demander : la confirmation est asynchrone et appartient donc
-  // aux appelants, qui posent _accountConfirmed une fois le membre d'accord. Un futur appelant
-  // qui oublierait cette étape serait bloqué plutôt que de fusionner en silence.
+  // Filet de sécurité : le conflit est traité par les appelants, qui créent un emplacement
+  // avant d'arriver ici — l'état est alors vierge, donc sans conflit. Un futur appelant qui
+  // oublierait cette étape est bloqué, jamais autorisé à fusionner en silence.
   const _conflit = ibAccountConflict(parsed);
-  if (_conflit && !parsed._accountConfirmed) {
+  if (_conflit) {
     return { added: 0, skipped: 0, total: (parsed.trades || []).length, kpiUpdates: {},
              depositsTotal: 0, interestTotal: 0, blockedBy: _conflit };
   }
@@ -7799,11 +7990,14 @@ async function ibSync() {
 
     const _cfl = ibAccountConflict(parsed);
     if (_cfl) {
-      if (!await ibConfirmAccountMix(parsed.accountId, _cfl)) {
+      const _connu = oltFindAccount(parsed.accountId);
+      const _choix = await ibConfirmAccountMix(parsed.accountId, _cfl, _connu);
+      if (_choix === 'non') {
         ibLog(`⛔ Import annulé : ce relevé vient du compte ${parsed.accountId}, vos données du compte ${_cfl}.`, 'warn');
         return;
       }
-      parsed._accountConfirmed = true;
+      if (_connu) { oltSwitchAccount(_connu.slot); ibLog(`👤 Bascule vers le compte ${_connu.accountId}, déjà suivi.`, 'ok'); }
+      else ibLog(`👤 Nouvel emplacement ${oltAddAccount(parsed.accountId, parsed.accountName)} — import isolé du compte ${_cfl}.`, 'ok');
     }
     const merge = ibMergeData(parsed);
     if (merge.blockedBy) {
@@ -8194,7 +8388,7 @@ function renderIBConnect() {
     }
     if (clearBtn) {
       clearBtn.addEventListener('click', async () => {
-        const ok = await oltConfirm({
+        const ok = 'oui' === await oltConfirm({
           titre: 'Déconnecter le compte IB',
           corps: 'Le jeton et l\'identifiant de requête seront effacés, et la synchronisation automatique cessera.'
                + '<br><br>Vos <strong style="color:var(--text)">données importées restent intactes</strong> : trades, KPI et positions ne bougent pas.',
@@ -9174,11 +9368,14 @@ async function xmlApplyData() {
   if (!xmlPendingData) return;
   const _cfl = ibAccountConflict(xmlPendingData);
   if (_cfl) {
-    if (!await ibConfirmAccountMix(xmlPendingData.accountId, _cfl)) {
+    const _connu = oltFindAccount(xmlPendingData.accountId);
+    const _choix = await ibConfirmAccountMix(xmlPendingData.accountId, _cfl, _connu);
+    if (_choix === 'non') {
       xmlShowLog(`⛔ Import annulé : ce relevé vient du compte ${xmlPendingData.accountId}, vos données du compte ${_cfl}.`, 'warn');
       return;
     }
-    xmlPendingData._accountConfirmed = true;
+    if (_connu) { oltSwitchAccount(_connu.slot); xmlShowLog(`👤 Bascule vers le compte ${_connu.accountId}, déjà suivi.`, 'ok'); }
+    else xmlShowLog(`👤 Nouvel emplacement ${oltAddAccount(xmlPendingData.accountId, xmlPendingData.accountName)} — import isolé du compte ${_cfl}.`, 'ok');
   }
   const merge = ibMergeData(xmlPendingData);
   if (merge.blockedBy) {
@@ -9279,7 +9476,7 @@ async function deleteSelectedYears() {
   const total  = srcs.reduce((s, src) => s + src.arr.filter(x => inYear(x.date)).length, 0);
   const _detail = srcs.map(src => ({ l: src.lbl, n: src.arr.filter(x => inYear(x.date)).length }))
     .filter(x => x.n > 0).map(x => x.n + ' ' + x.l).join(' · ');
-  if (!await oltConfirm({
+  if ('oui' !== await oltConfirm({
     titre: '⚠ Supprimer les données de ' + checked.join(', '),
     corps: '<strong style="color:var(--text)">' + total + ' élément(s)</strong> seront effacés'
          + (_detail ? ' — ' + _detail : '')
