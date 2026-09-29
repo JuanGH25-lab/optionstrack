@@ -6121,11 +6121,15 @@ function renderAccountSwitcher() {
   const actif = oltActiveSlot();
   // Le nom est déjà affiché juste au-dessus (u-name) : le répéter dans chaque option
   // n'apporterait rien et alourdirait un menu qu'on veut lire d'un coup d'œil.
-  const libelle = a => accountIdHidden ? '•••••••' : (a.accountId || 'Compte ' + a.slot);
+  //
+  // Masqué, on ne peut plus montrer le numéro réel — mais un « Compte 1 / Compte 2 » stable par
+  // position permet quand même de s'y retrouver. L'œil sert à cacher le numéro lors d'un
+  // partage d'écran, pas à rendre le sélecteur inutilisable pour son propre usage.
+  const libelle = (a, i) => accountIdHidden ? ('Compte ' + (i + 1)) : (a.accountId || 'Compte ' + a.slot);
   el.style.display = '';
   el.innerHTML = '<div class="sb-accounts-row"><select onchange="oltSwitchAccount(this.value)" title="Changer de compte">'
-    + list.map(a => '<option value="' + a.slot + '"' + (a.slot === actif ? ' selected' : '') + '>'
-        + libelle(a).replace(/</g, '&lt;') + '</option>').join('')
+    + list.map((a, i) => '<option value="' + a.slot + '"' + (a.slot === actif ? ' selected' : '') + '>'
+        + libelle(a, i).replace(/</g, '&lt;') + '</option>').join('')
     + '</select><button class="sb-gear" onclick="oltManageAccounts()" title="Gérer mes comptes">⚙</button></div>';
 }
 
@@ -6664,6 +6668,10 @@ function toggleAccountId() {
   document.querySelectorAll('.account-id-display').forEach(el => {
     el.textContent = display;
   });
+
+  // Le sélecteur de comptes lit accountIdHidden à chaque rendu, mais ne se redessine pas tout
+  // seul : sans cet appel, ses options gardaient les numéros en clair après un clic sur l'œil.
+  renderAccountSwitcher();
 }
 
 function updateSidebarDot() {
