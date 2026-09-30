@@ -8385,11 +8385,36 @@ function renderIBConnect() {
       });
     }
     if (saveBtn) {
-      saveBtn.addEventListener('click', () => {
+      saveBtn.addEventListener('click', async () => {
         const token   = (tokenInput?.value || '').trim();
         const queryId = (document.getElementById('ib-queryid')?.value || '').trim();
         if (!token || !queryId) { alert('Veuillez saisir le Token et le Query ID.'); return; }
-        ibSaveConfig({ ...ibLoadConfig(), token, queryId });
+
+        // Piège identifié en prod (30/09/2026) : « Enregistrer » écrase la config Flex Query
+        // du compte ACTIF sans savoir à qui appartiennent le Token/Query ID collés. En
+        // multi-compte, coller ceux d'un AUTRE compte pendant qu'un compte déjà connecté est
+        // actif efface sa config en silence — la synchro suivante détecte bien le conflit de
+        // compte et importe au bon endroit, mais le compte quitté se retrouve avec la
+        // connexion d'un autre, et le nouvel emplacement n'a jamais la sienne.
+        //
+        // Le Query ID (contrairement au Token, valable pour tout l'identifiant IBKR) est
+        // propre à un compte : s'il change sur un emplacement qui a déjà des données, c'est
+        // le signal qu'on est probablement en train de configurer le mauvais compte.
+        const actuel = ibLoadConfig();
+        if (accountKPI._accountId && actuel.queryId && actuel.queryId !== queryId) {
+          const remplace = 'oui' === await oltConfirm({
+            titre: 'Remplacer la connexion de ce compte ?',
+            corps: 'Le compte actif (<strong style="color:var(--text)">' + oltEsc(accountKPI._accountId) + '</strong>) a déjà une connexion enregistrée, avec un autre Query ID.'
+                 + '<br><br>Si ce Token/Query ID appartient à un <strong style="color:var(--text)">autre compte IBKR</strong>, basculez d\'abord vers son emplacement (ou créez-en un) avant d\'enregistrer — sinon la connexion de ce compte-ci sera perdue.',
+            note: 'Vous renouvelez simplement le Token de CE compte ? Continuez normalement.',
+            ok: 'Enregistrer quand même',
+            annuler: 'Annuler',
+            danger: true,
+          });
+          if (!remplace) return;
+        }
+
+        ibSaveConfig({ ...actuel, token, queryId });
         updateSidebarDot();
         renderIBConnect();
       });
