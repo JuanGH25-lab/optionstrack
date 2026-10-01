@@ -8016,12 +8016,27 @@ async function ibSync() {
     ibLog('❌ Token ou Query ID manquant. Configurez la connexion IB.', 'err');
     return;
   }
+  // Compte visé par CETTE synchro, figé au départ — une synchro (surtout l'auto-sync au
+  // chargement, qui attend 5s puis peut prendre jusqu'à plusieurs dizaines de secondes) peut
+  // encore tourner en fond quand le membre a déjà basculé vers un autre compte depuis la barre
+  // latérale. Sans ce garde-fou, les données reçues pour CE compte se seraient apprêtées à
+  // fusionner dans celui, différent, devenu actif entre-temps — d'où une modale de conflit qui
+  // semble surgir "sans raison" après un simple changement de compte.
+  const slotDepart = oltActiveSlot();
 
   ibSyncRunning = true;
   const btn = document.getElementById('sync-btn');
   const statusEl = document.getElementById('sync-status-text');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronisation…'; }
   if (statusEl) statusEl.textContent = 'Synchronisation en cours…';
+  // Remet le bouton et le témoin de synchro en état normal avant un retour anticipé — les
+  // abandons (conflit de compte annulé, import bloqué) sautaient cette remise à zéro et
+  // laissaient le bouton bloqué sur "Synchronisation…" jusqu'au prochain rechargement.
+  const _finClean = () => {
+    ibSyncRunning = false;
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Synchroniser maintenant'; }
+    if (document.getElementById('sync-btn')) renderIBConnect();
+  };
 
   ibClearLog();
   ibLog('🔗 Connexion à Interactive Brokers…', 'info');
@@ -8088,12 +8103,19 @@ async function ibSync() {
     }
     if (parsed.cashTxDetails.length > 0) ibLog(`💳 ${parsed.cashTxDetails.length} transaction(s) cash parsée(s)`, 'info');
 
+    if (oltActiveSlot() !== slotDepart) {
+      ibLog('⛔ Compte changé pendant la synchronisation — import annulé pour ne pas le mélanger avec le compte maintenant actif. Relancez la synchro depuis le compte visé si besoin.', 'warn');
+      _finClean();
+      return;
+    }
+
     const _cfl = ibAccountConflict(parsed);
     if (_cfl) {
       const _connu = oltFindAccount(parsed.accountId);
       const _choix = await ibConfirmAccountMix(parsed.accountId, _cfl, _connu);
       if (_choix === 'non') {
         ibLog(`⛔ Import annulé : ce relevé vient du compte ${parsed.accountId}, vos données du compte ${_cfl}.`, 'warn');
+        _finClean();
         return;
       }
       if (_connu) { oltSwitchAccount(_connu.slot); ibLog(`👤 Bascule vers le compte ${_connu.accountId}, déjà suivi.`, 'ok'); }
@@ -8102,6 +8124,7 @@ async function ibSync() {
     const merge = ibMergeData(parsed);
     if (merge.blockedBy) {
       ibLog(`⛔ Import annulé : ce relevé vient du compte ${parsed.accountId}, vos données du compte ${merge.blockedBy}.`, 'warn');
+      _finClean();
       return;
     }
     ibLog(`✅ ${merge.added} nouveau(x) trade(s) ajouté(s) · ${merge.skipped} doublon(s) ignoré(s)`, 'ok');
