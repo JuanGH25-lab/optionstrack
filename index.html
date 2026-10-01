@@ -6096,6 +6096,10 @@ function oltAddAccount(accountId, nom) {
 function oltSwitchAccount(slot) {
   if (!slot || slot === oltActiveSlot()) return;
   if (!oltAccounts().some(a => a.slot === slot)) return;
+  // On reste sur l'écran déjà ouvert (Positions, Transactions...) avec les données du nouveau
+  // compte, plutôt que de renvoyer systématiquement au Tableau de bord — capturé AVANT le
+  // reset, qui vide les données affichées mais ne touche pas à la navigation elle-même.
+  const pageAvant = document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard';
   saveAppData();                                   // fige le compte qu'on quitte
   try { localStorage.setItem(ACTIVE_KEY, slot); } catch {}
   oltResetState();
@@ -6108,7 +6112,7 @@ function oltSwitchAccount(slot) {
   updateExpiryBadge();
   updateSidebarMeta();
   updateSidebarDot();
-  setPage('dashboard');
+  setPage(pageAvant);
 }
 
 // Sélecteur dans la barre latérale. Absent tant qu'il n'y a qu'un compte : inutile d'encombrer
