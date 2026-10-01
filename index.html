@@ -7420,13 +7420,36 @@ function ibConfirmAccountMix(entrant, actuel, connu) {
 // Cas volontairement laissés passer :
 //   • aucun compte enregistré — premier import, ou données antérieures à la capture de
 //     l'identifiant (elle n'a pas toujours existé) ;
-//   • relevé sans identifiant — certains CSV partiels n'en portent pas.
-// Dans les deux cas on ne peut rien affirmer, et bloquer serait pire que laisser passer.
+//   • relevé sans identifiant — certains CSV partiels n'en portent pas (section
+//     « Informations du compte » absente, ou format non reconnu par le parseur).
+// Dans les deux cas on ne peut rien affirmer ici — mais le second est risqué dès qu'il existe
+// PLUSIEURS comptes : voir ibConfirmUnknownAccount, appelé par les deux chemins d'import juste
+// avant la fusion, qui comble ce trou en demandant confirmation plutôt que de deviner.
 function ibAccountConflict(parsed) {
   const actuel = (accountKPI._accountId || '').trim();
   const entrant = (parsed && parsed.accountId ? String(parsed.accountId) : '').trim();
   if (!actuel || !entrant) return null;
   return actuel.toUpperCase() === entrant.toUpperCase() ? null : actuel;
+}
+
+// Relevé SANS identifiant de compte détecté (CSV incomplet, format non reconnu...) : en
+// mono-compte, aucun risque, il n'y a qu'un panier possible. En multi-compte, fusionner en
+// silence peut mélanger deux comptes sans qu'aucun garde-fou ne s'en aperçoive — ibAccountConflict
+// le dit lui-même, il ne peut rien affirmer sans identifiant. On ne devine pas à sa place : on
+// demande confirmation explicite plutôt que d'assumer que c'est forcément le compte actif.
+//
+// Bug remonté par un membre (01/10/2026) : son CSV se fusionnait sans prévenir dans le mauvais
+// compte, faute d'identifiant reconnu — exactement ce trou.
+function ibConfirmUnknownAccount(actif) {
+  return oltConfirm({
+    titre: 'Compte introuvable dans ce relevé',
+    corps: 'Ce relevé ne précise pas de quel compte IBKR il provient (section « Informations du compte » absente, ou format non reconnu).'
+         + '<br><br>Il va être ajouté au compte actuellement actif : <strong style="color:var(--text)">' + oltEsc(actif) + '</strong>.'
+         + '<br><br>Si ce relevé appartient à un <strong style="color:var(--text)">autre</strong> compte, annulez et basculez d\'abord vers le bon emplacement dans la barre latérale.',
+    note: 'Un seul compte sur OLT Tracker ? Continuez sans crainte.',
+    ok: 'Continuer',
+    annuler: 'Annuler',
+  });
 }
 
 function ibMergeData(parsed) {
@@ -9409,6 +9432,10 @@ async function xmlApplyData() {
     }
     if (_connu) { oltSwitchAccount(_connu.slot); xmlShowLog(`👤 Bascule vers le compte ${_connu.accountId}, déjà suivi.`, 'ok'); }
     else xmlShowLog(`👤 Nouvel emplacement ${oltAddAccount(xmlPendingData.accountId, xmlPendingData.accountName)} — import isolé du compte ${_cfl}.`, 'ok');
+  } else if (!xmlPendingData.accountId && oltAccounts().length > 1) {
+    const actif = accountIdHidden ? '•••••••' : (accountKPI._accountId || 'ce compte');
+    const poursuit = 'oui' === await ibConfirmUnknownAccount(actif);
+    if (!poursuit) { xmlShowLog('⛔ Import annulé — basculez vers le bon compte puis réessayez.', 'warn'); return; }
   }
   const merge = ibMergeData(xmlPendingData);
   if (merge.blockedBy) {
