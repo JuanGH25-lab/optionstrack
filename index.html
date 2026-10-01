@@ -6715,54 +6715,116 @@ async function ibFetchWithProxy(url) {
     throw new Error(`proxy a répondu ${res.status}`);
   } catch(e) {
     ibLog(`⚠️ Proxy sécurisé indisponible (${e.message})`, 'warn');
-    throw new Error("La synchronisation Flex nécessite le proxy sécurisé d'OLT Tracker (accessible depuis olt-tracker.app). En attendant, vous pouvez importer votre relevé en XML ou CSV.");
+    const err = new Error("La synchronisation Flex nécessite le proxy sécurisé d'OLT Tracker (accessible depuis olt-tracker.app). En attendant, vous pouvez importer votre relevé en XML ou CSV.");
+    // Panne réseau ou souci proxy : transitoire par défaut (fiche synchro Flex, règle 7) — une
+    // page de maintenance IBKR ou un timeout réseau le week-end ne doit pas stopper la synchro.
+    err.ibRetryable = true;
+    throw err;
   }
 }
 
-async function ibFlexQueryStep1(token, queryId) {
-  const url = `https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest?t=${token}&q=${queryId}&v=3`;
+// ── Classement des codes IBKR — fiche technique transmise par Hermann (wheel-suite),
+// elle-même alignée sur la doc officielle Flex Web Service v3. Un code non listé est traité
+// comme définitif par prudence (mieux vaut s'arrêter que boucler indéfiniment sur l'inconnu).
+//
+// Avant cette règle, OLT ne regardait JAMAIS le code numérique : il cherchait des bouts de
+// phrase anglais dans le message final (voir ibSync plus bas), qui ne couvraient ni le 1019
+// (le cas le plus courant pour une Activity Flex Query fraîche — relevé pas encore prêt) ni
+// une page de maintenance non-XML. Résultat observé en prod : synchro qui échoue au premier
+// accroc au lieu d'attendre, d'où « marche 1 fois sur 10 » et « marche mal le week-end ».
+const IB_RETRYABLE_CODES = new Set([1001, 1004, 1005, 1006, 1007, 1008, 1009, 1018, 1019, 1021]);
+
+// Lit <Status>/<ErrorCode>/<ErrorMessage> d'une réponse IBKR et construit une erreur dont
+// `.ibRetryable` dit si ibSync doit réessayer — décidé par le CODE numérique, jamais par le
+// texte anglais du message (fragile et incomplet, voir ci-dessus).
+function ibErrorFromStatement(doc) {
+  const msg  = doc.querySelector('ErrorMessage')?.textContent?.trim() || 'Unknown error';
+  const codeText = doc.querySelector('ErrorCode')?.textContent?.trim();
+  const code = codeText ? parseInt(codeText, 10) : null;
+  const err = new Error(`IB a retourné une erreur${code ? ` [code ${code}]` : ''} : ${msg}`);
+  err.ibCode = code;
+  err.ibRetryable = code != null && IB_RETRYABLE_CODES.has(code);
+  return err;
+}
+
+// Vrai si `doc` est une vraie réponse IBKR (FlexStatementResponse ou FlexQueryResponse).
+// Faux pour une page de maintenance HTML ou un flux tronqué : DOMParser ne lève pas
+// d'exception dans ce cas, il rend un document sans aucune de ces balises — indétectable
+// autrement, et jusqu'ici traité à tort comme une erreur définitive ("Unknown error").
+function ibIsValidResponse(doc) {
+  return !!doc.querySelector('Status, ErrorCode, FlexStatements, ReferenceCode');
+}
+
+async function ibFlexSendRequestAt(baseUrl, token, queryId) {
+  const url = `${baseUrl}?t=${token}&q=${queryId}&v=3`;
   const xml = await ibFetchWithProxy(url);
-  // Parse response — expect <FlexStatementResponse><Status>Success</Status><ReferenceCode>XXXXX</ReferenceCode>...
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
-  const status = doc.querySelector('Status')?.textContent?.trim();
-  if (status !== 'Success') {
-    // Le CODE est la seule information exploitable pour diagnostiquer (1003 incident,
-    // 1018 limite de débit, 1019 génération en cours, 1020 token/query invalide…) :
-    // on le conserve dans le message plutôt que de le perdre au profit du texte seul.
-    const msg  = doc.querySelector('ErrorMessage')?.textContent?.trim() || 'Unknown error';
-    const code = doc.querySelector('ErrorCode')?.textContent?.trim();
-    throw new Error(`IB a retourné une erreur${code ? ` [code ${code}]` : ''} : ${msg}`);
+  if (!ibIsValidResponse(doc)) {
+    const err = new Error('Réponse IB illisible (page de maintenance ou flux tronqué)');
+    err.ibRetryable = true;
+    throw err;
   }
+  const status = doc.querySelector('Status')?.textContent?.trim();
+  if (status !== 'Success') throw ibErrorFromStatement(doc);
   const refCode = doc.querySelector('ReferenceCode')?.textContent?.trim();
   if (!refCode) throw new Error('Pas de ReferenceCode dans la réponse IB.');
   const ibUrl = doc.querySelector('Url')?.textContent?.trim() || null;
   return { refCode, ibUrl };
 }
 
-async function ibFlexQueryStep2(token, refCode, ibUrl) {
-  // Use the URL from step 1 response if available, otherwise build it
-  const baseUrl = ibUrl || `https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement`;
-  const url = ibUrl
-    ? `${ibUrl}?t=${token}&q=${refCode}&v=3`
-    : `${baseUrl}?t=${token}&q=${refCode}&v=3`;
+// Point d'entrée v3 documenté (AccountManagement/FlexWebService), celui que wheel-suite
+// utilise avec succès tous les jours, week-end compris — y compris sur un compte où OLT,
+// avec l'ancien point d'entrée "servlet", échouait systématiquement (code 1001 permanent).
+// Repli sur l'ancien point d'entrée si le premier échoue : des comptes fonctionnent déjà
+// dessus en production (ex. celui de Juan), on ne veut rien leur casser pendant la bascule.
+const IB_SENDREQUEST_V3     = 'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest';
+const IB_SENDREQUEST_LEGACY = 'https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest';
+const IB_GETSTATEMENT_LEGACY = 'https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement';
 
-  for (let attempt = 1; attempt <= 8; attempt++) {
+async function ibFlexQueryStep1(token, queryId) {
+  try {
+    return await ibFlexSendRequestAt(IB_SENDREQUEST_V3, token, queryId);
+  } catch (errV3) {
+    ibLog(`⚠️ SendRequest (v3) a échoué (${errV3.message}) — tentative sur l'ancien point d'entrée…`, 'warn');
+    try {
+      return await ibFlexSendRequestAt(IB_SENDREQUEST_LEGACY, token, queryId);
+    } catch (errLegacy) {
+      // Les deux ont échoué : on remonte l'erreur du point d'entrée v3 — c'est celui que suit
+      // la doc IBKR à jour, son message est le plus pertinent pour diagnostiquer.
+      throw errV3;
+    }
+  }
+}
+
+const MAX_GETSTATEMENT_ATTEMPTS = 8;
+
+async function ibFlexQueryStep2(token, refCode, ibUrl) {
+  // Utilise l'URL reçue dans <Url> à l'étape 1 : IBKR y route déjà vers le bon serveur
+  // (ndcdyn ou gdcdyn selon le compte). Le repli codé en dur ne sert que si IBKR a répondu
+  // "Success" sans fournir d'Url — cas limite qu'on ne veut pas laisser planter sans message.
+  const baseUrl = ibUrl || IB_GETSTATEMENT_LEGACY;
+  const url = `${baseUrl}?t=${token}&q=${refCode}&v=3`;
+
+  for (let attempt = 1; attempt <= MAX_GETSTATEMENT_ATTEMPTS; attempt++) {
     const xml = await ibFetchWithProxy(url);
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, 'text/xml');
-    const status = doc.querySelector('Status')?.textContent?.trim();
-    if (status === 'Success' || doc.querySelector('FlexStatements')) {
-      return xml;
-    }
-    if (status === 'Processing' || status === 'StatementGenerating') {
-      ibLog(`⏳ Rapport en cours de génération... (tentative ${attempt}/8)`, 'warn');
+    if (!ibIsValidResponse(doc)) {
+      ibLog(`⏳ GetStatement #${attempt} : réponse illisible (page de maintenance ?), pause 5s…`, 'warn');
       await new Promise(r => setTimeout(r, 5000));
       continue;
     }
-    const msg  = doc.querySelector('ErrorMessage')?.textContent?.trim() || status || 'Unknown error';
-    const code = doc.querySelector('ErrorCode')?.textContent?.trim();
-    throw new Error(`IB GetStatement erreur${code ? ` [code ${code}]` : ''} : ${msg}`);
+    if (doc.querySelector('FlexStatements')) return xml; // FlexQueryResponse : relevé complet
+    const status = doc.querySelector('Status')?.textContent?.trim();
+    if (status === 'Success') return xml; // rare sans FlexStatements, gardé par prudence
+    const err = ibErrorFromStatement(doc);
+    if (err.ibRetryable) {
+      ibLog(`⏳ GetStatement #${attempt} : ${err.message} — pause 5s (tentative ${attempt}/${MAX_GETSTATEMENT_ATTEMPTS})`, 'warn');
+      await new Promise(r => setTimeout(r, 5000));
+      continue;
+    }
+    throw err;
   }
   throw new Error('Le rapport IB met trop de temps à générer. Réessayez dans quelques instants.');
 }
@@ -7984,7 +8046,10 @@ async function ibSync() {
 
     // Step 2: Fetch generated XML
     ibLog('📥 Étape 2/3 : Téléchargement du rapport (peut prendre 5-15s)…', 'info');
-    await new Promise(r => setTimeout(r, 2000)); // IB needs a moment
+    // 5s, pas 2 : IBKR a besoin de ce délai pour préparer le relevé (fiche synchro Flex,
+    // règle 3 — alignée sur wheel-suite). En dessous, on tombe presque toujours sur "génération
+    // en cours" avant même d'avoir laissé la chance au premier essai de suffire.
+    await new Promise(r => setTimeout(r, 5000));
     const xmlText = await ibFlexQueryStep2(cfg.token, refCode, ibUrl);
     ibLog(`✅ XML reçu · ${Math.round(xmlText.length / 1024)} KB`, 'ok');
 
@@ -8058,12 +8123,17 @@ async function ibSync() {
 
     } catch (err) {
       lastError = err;
-      const isIBUnavailable = err.message && (
+      // Classement par CODE IBKR numérique (`.ibRetryable`, posé par ibErrorFromStatement /
+      // ibFetchWithProxy) — plus par bouts de phrase anglais : aucun des quatre cherchés
+      // auparavant ne correspondait au texte réel du 1019 (le cas le plus courant), ni à une
+      // page de maintenance non-XML. Secours pour une erreur non classée (ne devrait plus
+      // arriver, mais prudence) : l'ancienne heuristique textuelle.
+      const isIBUnavailable = err.ibRetryable === true || (err.ibRetryable === undefined && err.message && (
         err.message.includes('Statement could not be generated') ||
         err.message.includes('Please try again') ||
         err.message.includes('temporarily unavailable') ||
         err.message.includes('try again shortly')
-      );
+      ));
 
       if (isIBUnavailable && attempt < MAX_RETRIES) {
         // Le message d'IBKR est REPRIS TEL QUEL : il porte le code d'erreur, seule donnée
