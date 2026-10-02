@@ -8132,9 +8132,16 @@ async function ibSync() {
     if (merge.interestTotal !== 0) ibLog(`✅ Intérêts mis à jour : ${fmt(merge.interestTotal)}`, 'ok');
     if (Object.keys(merge.kpiUpdates).length > 0) ibLog(`✅ KPIs du tableau de bord mis à jour automatiquement`, 'ok');
 
-    // Save sync timestamp
-    const now = new Date().toISOString();
-    ibSaveConfig({ ...cfg, lastSync: now, lastTradeCount: merge.total, lastAdded: merge.added });
+    // Save sync timestamp — SEULEMENT si on est resté sur le compte de départ. Un conflit
+    // résolu par "Basculer vers ce compte" (ci-dessus) a changé le compte actif en cours de
+    // route : `cfg` contient le Token/Query ID du compte de DÉPART, pas celui qu'on vient de
+    // rejoindre. Les enregistrer ici écraserait la configuration Flex propre à ce dernier avec
+    // des identifiants qui ne lui appartiennent pas (bug remonté par Juan le 03/10/2026 : le
+    // Query ID affiché restait celui de l'autre compte après la bascule).
+    if (oltActiveSlot() === slotDepart) {
+      const now = new Date().toISOString();
+      ibSaveConfig({ ...cfg, lastSync: now, lastTradeCount: merge.total, lastAdded: merge.added });
+    }
 
     if (statusEl) statusEl.textContent = `Dernière sync: ${new Date().toLocaleString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'})}`;
 
