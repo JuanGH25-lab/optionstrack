@@ -983,12 +983,28 @@ function groupedTransactions() {
 }
 
 function availableYears() {
-  const txYears      = transactions.map(t => t.date.slice(0,4));
+  // Toutes les sources d'activité, pas seulement les options : un compte qui ne fait que de
+  // l'achat-revente d'actions/ETF (aucune option) n'a rien dans `transactions` par
+  // construction — s'en tenir à ce seul tableau lui masquait les années où il n'y a pas eu
+  // de dépôt mais bien du trading actions (bug remonté le 05/10/2026).
+  const txYears = [
+    ...transactions.map(t => t.date),
+    ...stockTrades.map(t => t.date),
+    ...stockDividends.map(d => d.date),
+    ...stockTransfers.map(t => t.date),
+  ].filter(Boolean).map(d => d.slice(0,4));
   const depositYears = Object.keys(accountKPI)
     .filter(k => k.startsWith('_deposits_'))
     .map(k => k.replace('_deposits_', ''));
   return [...new Set([...txYears, ...depositYears])].sort();
 }
+
+// Vrai dès qu'il existe une donnée d'activité quelconque — options OU actions/ETF. `transactions`
+// ne porte QUE les trades d'options : un compte purement actions/ETF l'a toujours vide, et s'y
+// fier seul affichait "Aucune donnée importée" malgré des positions actions bien réelles (bug
+// remonté le 05/10/2026 — compte sans aucune option).
+const oltHasData = () => transactions.length > 0 || stockPositions.length > 0 ||
+  stockTrades.length > 0 || stockDividends.length > 0 || stockTransfers.length > 0;
 
 // ── Helpers
 const fmt  = n => (n<0?'-'+ccySym():ccySym()) + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1715,7 +1731,7 @@ function applyParsedData() {
 // ── Dashboard
 function renderDashboard() {
   // ── Empty state — no data imported yet
-  if (transactions.length === 0) {
+  if (!oltHasData()) {
     document.getElementById('content').innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;gap:16px">
         <div style="font-size:48px;opacity:0.3">📊</div>
@@ -1741,8 +1757,10 @@ function renderDashboard() {
   // « hors apports » = hors dépôts cash ET hors transferts de titres (capital apporté en nature)
   const navChg = nav - currentKPI().navStart - currentKPI().deposited - (currentKPI().transfers || 0);
 
-  // Build period label from actual data
-  const dates = transactions.map(t => t.date).sort();
+  // Build period label from actual data — options ET actions/ETF (voir oltHasData : un compte
+  // sans aucune option aurait sinon `dates` vide, et fmtD(dates[dates.length-1]) plantait sur
+  // le dernier élément d'un tableau vide).
+  const dates = [...transactions.map(t => t.date), ...stockTrades.map(t => t.date)].sort();
   const fmtD = d => { const [y,m,day] = d.split('-'); const months=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']; return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`; };
 
   // Compute fees + interest directly from filtered transactions (respects year filter)
@@ -1911,7 +1929,7 @@ function renderDashboard() {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div>
           <div class="db-chart-title">Revenus mensuels par source</div>
-          <div class="db-chart-sub">Primes + P&L actions + dividendes + intérêts (barres empilées) · Dépôts: ${fmt(currentKPI().deposited)} · ${fmtD(dates[dates.length-1])}</div>
+          <div class="db-chart-sub">Primes + P&L actions + dividendes + intérêts (barres empilées) · Dépôts: ${fmt(currentKPI().deposited)}${dates.length ? ' · ' + fmtD(dates[dates.length-1]) : ''}</div>
         </div>
         <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;gap:14px">
@@ -6595,7 +6613,7 @@ function ibIsConnected() {
 
 function updateSidebarMeta() {
   renderAccountSwitcher();
-  if (transactions.length === 0) return;
+  if (!oltHasData()) return;
   // Période couverte = ACTIVITÉ LA PLUS ANCIENNE, toutes données confondues → date du
   // dernier relevé importé (upload manuel ou synchro Flex).
   // Auparavant seules les transactions d'OPTIONS bornaient la plage, ce qui amputait
