@@ -6068,13 +6068,22 @@ function oltResetState() {
   hiddenSeries.clear();
 }
 
+// Normalise un numéro de compte avant toute comparaison — pas seulement les espaces en
+// bord (trim), mais TOUS les espaces, y compris internes. Un relevé CSV plus ancien peut
+// encoder le même numéro avec un espacement différent (ex. espace insécable copié-collé
+// depuis le portail, ou gabarit d'export qui a changé au fil des ans) ; un .trim() seul
+// laisse passer cette différence et déclenche un faux conflit de compte entre deux imports
+// du même membre (bug remonté le 05/10/2026 : conflit affiché avec le même numéro des deux
+// côtés, car la comparaison brute différait sur un détail invisible à l'œil).
+const oltNormAccountId = s => String(s || '').replace(/\s+/g, '').toUpperCase();
+
 // Cherche dans le registre un emplacement déjà associé à cet identifiant de compte. Rend
 // l'entrée trouvée, ou null si le compte est inédit — sert à distinguer un vrai nouveau
 // compte d'un compte déjà suivi qu'il suffit de rejoindre.
 function oltFindAccount(accountId) {
-  const id = String(accountId || '').trim().toUpperCase();
+  const id = oltNormAccountId(accountId);
   if (!id) return null;
-  return oltAccounts().find(a => String(a.accountId || '').trim().toUpperCase() === id) || null;
+  return oltAccounts().find(a => oltNormAccountId(a.accountId) === id) || null;
 }
 
 // Crée un emplacement et bascule dessus. Le compte courant est sauvegardé d'abord.
@@ -7495,7 +7504,7 @@ function ibAccountConflict(parsed) {
   const actuel = (accountKPI._accountId || '').trim();
   const entrant = (parsed && parsed.accountId ? String(parsed.accountId) : '').trim();
   if (!actuel || !entrant) return null;
-  return actuel.toUpperCase() === entrant.toUpperCase() ? null : actuel;
+  return oltNormAccountId(actuel) === oltNormAccountId(entrant) ? null : actuel;
 }
 
 // Relevé SANS identifiant de compte détecté (CSV incomplet, format non reconnu...) : en
