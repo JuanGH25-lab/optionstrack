@@ -6872,6 +6872,7 @@ function ibParseXML(xmlText) {
     interestByMonth: {}, // { 'YYYY-MM': montant base } — pour la courbe du tableau de bord
     closedContracts: [], // exercices/assignations détectés → pour badge "EXERCISED"/"ASSIGNED"
     strikeAdjustments: [], // ajustements de strike (dividende exceptionnel) détectés via conid
+    tickerAdjustments: [], // renommage de ticker (regroupement d'actions type ETHA→ETHA1) détecté via conid
     cashTxDetails: [],
     twr: null,
     flexFromDate: '', flexToDate: '', // populated below from FlexStatement attributes
@@ -7347,6 +7348,14 @@ function ibParseXML(xmlText) {
   // ── Ajustements de strike (dividende exceptionnel) via conid : le conid reste stable,
   // seul le strike change (ex. MAIN 50 P → 49.7 P, conid 883250385). On compare le strike
   // des trades à celui de la position ouverte (canonique) de même conid, puis on remappe.
+  //
+  // Même principe pour un RENOMMAGE de ticker (ex. ETHA → ETHA1 après un regroupement
+  // d'actions) : le conid de l'OPTION reste identique, seul le symbole (et son
+  // underlyingSymbol) change. Sans ce pont, la vente ouverte sous l'ancien ticker ne
+  // correspond plus à aucune position ouverte IBKR (ticker différent dans la comparaison
+  // plus bas) et se referme à tort, bien avant son échéance — remonté par Kapatcha le
+  // 07/10/2026 sur ETHA : 5 calls couverts vendus, donnés pour clôturés après le
+  // regroupement BlackRock alors qu'ils étaient toujours ouverts (juste relabellisés ETHA1).
   const _openByConid = {};
   doc.querySelectorAll('OpenPosition').forEach(op => {
     const conid = op.getAttribute('conid');
@@ -7369,7 +7378,21 @@ function ibParseXML(xmlText) {
         && !result.strikeAdjustments.some(a => a.ticker === cur.ticker && a.type === cur.type && a.expiry === cur.expiry && Math.abs(a.oldStrike - tStrike) < 0.0001)) {
       result.strikeAdjustments.push({ ticker: cur.ticker, type: cur.type, expiry: cur.expiry, oldStrike: tStrike, newStrike: cur.strike });
     }
+    const trTicker = (tr.getAttribute('underlyingSymbol') || '').trim() || (tr.getAttribute('symbol') || '').replace(/\s.*/, '');
+    if (trTicker && cur.ticker && trTicker !== cur.ticker && tExpiry === cur.expiry
+        && (!tStrike || Math.abs(tStrike - cur.strike) < 0.0001)
+        && !result.tickerAdjustments.some(a => a.oldTicker === trTicker && a.newTicker === cur.ticker && a.type === cur.type && a.expiry === cur.expiry)) {
+      result.tickerAdjustments.push({ oldTicker: trTicker, newTicker: cur.ticker, type: cur.type, strike: cur.strike, expiry: cur.expiry });
+    }
   });
+  // Applique aux trades parsés AVANT la réconciliation (le ticker d'ouverture est l'ancien)
+  if (result.tickerAdjustments.length) {
+    result.trades.forEach(t => {
+      const adj = result.tickerAdjustments.find(a =>
+        a.oldTicker === t.ticker && a.type === t.type && a.expiry === t.expiry && Math.abs(a.strike - t.strike) < 0.0001);
+      if (adj) t.ticker = adj.newTicker;
+    });
+  }
   // Applique aux trades parsés AVANT la réconciliation (le strike d'ouverture est l'ancien)
   if (result.strikeAdjustments.length) {
     result.trades.forEach(t => {
@@ -7580,6 +7603,19 @@ function ibMergeData(parsed) {
       if (normTicker(t.ticker) === normTicker(adj.ticker) && t.type === adj.type &&
           t.expiry === adj.expiry && Math.abs(t.strike - adj.oldStrike) < 0.0001) {
         t.strike = adj.newStrike;
+      }
+    });
+  });
+
+  // Renommage de ticker (regroupement d'actions, ex. ETHA → ETHA1) : même remap, mais sur le
+  // ticker des trades DÉJÀ stockés — sans lui, la vente historique reste sous l'ancien nom et
+  // ne retrouve plus jamais la position ouverte IBKR (qui, elle, porte désormais le nouveau),
+  // d'où une fermeture à tort plus bas. Voir ibParseXML pour la détection via conid.
+  (parsed.tickerAdjustments || []).forEach(adj => {
+    transactions.forEach(t => {
+      if (normTicker(t.ticker) === normTicker(adj.oldTicker) && t.type === adj.type &&
+          t.expiry === adj.expiry && Math.abs(t.strike - adj.strike) < 0.0001) {
+        t.ticker = adj.newTicker;
       }
     });
   });
