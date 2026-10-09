@@ -3996,6 +3996,19 @@ const YAHOO_SUFFIXES = {
   NOK: ['.OL'],
 };
 
+// Suffixes Yahoo par PLACE de cotation — pour les titres étrangers cotés en USD, où la devise
+// seule ne permet pas de détecter une collision de ticker avec la place américaine (même
+// devise des deux côtés, donc invisible à la logique de YAHOO_SUFFIXES ci-dessus).
+//
+// Repéré par Charlemagne sur JEPQ : il détient la version UCITS cotée à Londres en USD (ISIN
+// IE000U9J8HX9, ~27,8$), mais le ticker nu "JEPQ" sur Yahoo renvoie la version Nasdaq US
+// (~61$) — même ticker, même devise, deux titres sans rapport. Vérifié : Yahoo résout bien
+// "JEPQ.L" vers 27,795$ en USD, exactement sa position.
+const YAHOO_EXCHANGE_SUFFIXES = {
+  LSEETF: '.L',
+  LSE: '.L',
+};
+
 // Cache auto-rempli : ticker IBKR → symbole Yahoo résolu (persisté dans localStorage).
 let resolvedYahoo = {};
 
@@ -4033,14 +4046,26 @@ async function fetchYahooQuote(sym) {
   return null;
 }
 
-async function fetchPrice(ticker, ccy) {
+async function fetchPrice(ticker, ccy, listingExchange) {
   // Le cours doit correspondre à la DEVISE de la position → évite les collisions de tickers
   // (ex. CFR US = Cullen/Frost en USD vs CFR.SW = Richemont en CHF). Si la position est en
   // USD ou sans devise connue, on accepte n'importe quelle devise.
   const ccyMatches = q => !!q && (!ccy || ccy === 'USD' || !q.currency || _normCcy(q.currency) === _normCcy(ccy));
 
-  // 1. Symbole connu (override manuel > cache auto > règle HK > ticker nu)
   const known = yahooSymbol(ticker);
+
+  // Place de cotation étrangère connue (Londres...), cotée en USD : la vérification de devise
+  // ci-dessus ne peut RIEN détecter dans ce cas précis (même devise des deux côtés). On résout
+  // donc directement vers le suffixe Yahoo de cette place plutôt que de faire confiance au
+  // ticker nu — voir YAHOO_EXCHANGE_SUFFIXES. Seulement si rien n'est déjà connu/mémorisé.
+  if (known === ticker && listingExchange && YAHOO_EXCHANGE_SUFFIXES[listingExchange]) {
+    const cand = ticker + YAHOO_EXCHANGE_SUFFIXES[listingExchange];
+    const qe = await fetchYahooQuote(cand);
+    if (qe) { resolvedYahoo[ticker] = cand; saveAppData(); return qe.price; }
+    // Repli sur le chemin normal si cette place ne répond pas pour ce ticker précis.
+  }
+
+  // 1. Symbole connu (override manuel > cache auto > règle HK > ticker nu)
   const q = await fetchYahooQuote(known);
   if (ccyMatches(q)) return q.price;
 
@@ -4067,13 +4092,19 @@ async function fetchAllPrices() {
   // Devise par ticker (pour résoudre le suffixe Yahoo des actions étrangères)
   const ccyByTicker = {};
   open.forEach(t => { if (!ccyByTicker[t.ticker]) ccyByTicker[t.ticker] = t.currency || 'USD'; });
+  // Place de cotation par ticker (pour les titres étrangers cotés en USD — voir
+  // YAHOO_EXCHANGE_SUFFIXES). Seules les positions actions/ETF la portent.
+  const exchByTicker = {};
   // V2 — tickers des positions actions/ETF (mêmes cours sous-jacents que les options)
-  stockPositions.forEach(p => { if (!ccyByTicker[p.ticker]) ccyByTicker[p.ticker] = p.currency || 'USD'; });
+  stockPositions.forEach(p => {
+    if (!ccyByTicker[p.ticker]) ccyByTicker[p.ticker] = p.currency || 'USD';
+    if (!exchByTicker[p.ticker] && p.listingExchange) exchByTicker[p.ticker] = p.listingExchange;
+  });
   const tickers = [...new Set([...open.map(t => t.ticker), ...stockPositions.map(p => p.ticker)])];
   await Promise.all([
     fetchLiveFx(), // taux de change live, en parallèle des cours
     ...tickers.map(async ticker => {
-      const price = await fetchPrice(ticker, ccyByTicker[ticker]);
+      const price = await fetchPrice(ticker, ccyByTicker[ticker], exchByTicker[ticker]);
       if (price !== null) livePrices[ticker] = price;
     }),
   ]);
