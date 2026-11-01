@@ -4144,6 +4144,21 @@ let analyseState = { optType: 'ALL' };
 // ══════════════════════════════════════════════════════════════
 let equitiesTab = 'positions';
 
+// Tri du tableau « Positions actuelles ». +1 = croissant, -1 = décroissant — même convention
+// que POS_SORT_DEF (Positions Options) : le premier clic ouvre dans le sens le plus utile pour
+// la colonne (alphabétique pour un ticker, plus gros d'abord pour un montant). La valeur ouvre
+// par défaut, décroissant : c'est le tri qu'affichait déjà la page avant ce chantier, personne
+// ne doit voir l'ordre bouger tant qu'il n'a cliqué aucun en-tête.
+const EQ_SORT_DEF = { ticker: 1, qty: -1, pru: -1, pruAdj: -1, price: -1, valueBase: -1, pnlBase: -1, pnlPct: -1 };
+let eqSortCol = 'valueBase', eqSortDir = -1;
+
+function setEqSort(col) {
+  if (eqSortCol === col) eqSortDir *= -1;
+  else { eqSortCol = col; eqSortDir = EQ_SORT_DEF[col] || 1; }
+  renderEquities();
+  attachContentListeners();
+}
+
 // Primes d'options NETTES (primes − frais, rolls/rachats inclus) collectées sur un ticker,
 // dans la DEVISE de la position (pour soustraire du PRU sans mélange de devises).
 // On ne somme que les options de la même devise (cas quasi exclusif) ; valeurs d'origine
@@ -4585,8 +4600,22 @@ function renderEquities() {
                    : econ.ok ? pnlOrig * (p.fxRateToBase || 1)
                    : (p.fifoPnlUnrealized || 0) * (p.fxRateToBase || 1);
     const pnlPct   = costOrig !== 0 ? (pnlOrig / Math.abs(costOrig)) * 100 : 0;
-    return { ...p, live, price, valueOrig, valueBase, pru, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
-  }).sort((a, b) => Math.abs(b.valueBase) - Math.abs(a.valueBase));
+    // PRU ajusté (logique wheel) : PRU économique − primes d'options nettes du ticker ÷ nb
+    // d'actions. Calculé ICI (pas seulement dans la boucle d'affichage plus bas) pour être
+    // disponible au tri — null sur un short ou sans prime collectée, trié en fin de liste.
+    const prem = tickerNetPremiumOrig(p.ticker, p.currency);
+    const pruAdj = prem.count > 0 && p.qty > 0 ? pru - prem.sum / p.qty : null;
+    return { ...p, live, price, valueOrig, valueBase, pru, pruAdj, premSum: prem.sum, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
+  }).sort((a, b) => {
+    const col = eqSortCol;
+    const av = a[col], bv = b[col];
+    // Valeurs manquantes (PRU ajusté sans prime) : toujours en fin, quel que soit le sens.
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (col === 'ticker') return eqSortDir * av.localeCompare(bv);
+    return eqSortDir * (av - bv);
+  });
 
   // ── V2 : COUVERTURE — titres immobilisés par les calls VENDUS encore ouverts, et donc
   // nombre de covered calls qu'il reste possible de vendre sur la position.
@@ -4618,7 +4647,11 @@ function renderEquities() {
   const nEtf    = rows.filter(r => r.subCategory === 'ETF').length;
   const nStk    = rows.length - nEtf;
   const hasLive = rows.some(r => r.live);
-  const top     = rows[0];
+  // Indépendant du tri du tableau (voir EQ_SORT_DEF plus haut) : avant le tri triable, `rows`
+  // était TOUJOURS classé par valeur décroissante, donc rows[0] = la plus grosse ligne. Ce
+  // n'est plus garanti une fois le tri piloté par un clic d'en-tête — recalculé ici pour que
+  // la carte KPI reste correcte quel que soit l'ordre d'affichage du tableau.
+  const top = rows.reduce((max, r) => (!max || Math.abs(r.valueBase) > Math.abs(max.valueBase)) ? r : max, null);
   const topPct  = top && totalValue !== 0 ? (top.valueBase / totalValue) * 100 : 0;
 
   // Vert franc pour les gains : le teal #00e5cc est reserve a l'identite (tickers, PRU).
@@ -4973,6 +5006,8 @@ function renderEquities() {
       </table>`}
     </div>`;
 
+  const eArr = col => eqSortCol === col ? (eqSortDir === -1 ? ' ↓' : ' ↑') : ' ↕';
+
   document.getElementById('content').innerHTML = `
     <style>
       .eq-kpi { background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px; }
@@ -4982,6 +5017,7 @@ function renderEquities() {
       .eq-wrap      { background:var(--card-surface);border:1px solid var(--card-border);border-radius:14px;overflow:hidden; }
       .eq-table     { width:100%;border-collapse:collapse; }
       .eq-table thead th { padding:10px 12px;font-size:10px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid var(--card-border);background:var(--card-surface);white-space:nowrap; }
+      .eq-table thead th.active { color:#00e5cc; }
       .eq-table thead th:first-child { padding-left:20px; }
       .eq-table tbody tr { border-bottom:1px solid var(--card-bg); }
       .eq-table tbody tr:hover td { background:rgba(255,255,255,0.02); }
@@ -5037,22 +5073,23 @@ function renderEquities() {
       </div>` : `
       <table class="eq-table">
         <thead><tr>
-          <th>Ticker</th><th>Nom</th><th style="text-align:right">Qté</th>
+          <th data-esort="ticker" style="cursor:pointer" class="${eqSortCol==='ticker'?'active':''}">Ticker${eArr('ticker')}</th><th>Nom</th>
+          <th data-esort="qty" style="text-align:right;cursor:pointer" class="${eqSortCol==='qty'?'active':''}">Qté${eArr('qty')}</th>
           <th style="text-align:center" title="Titres immobilisés par les calls vendus ouverts, et nombre de covered calls encore vendables sur les titres libres">Couverture</th>
-          <th style="text-align:right">PRU</th>
-          <th style="text-align:right" title="PRU − primes d'options nettes du ticker ÷ nb d'actions">PRU ajusté</th>
-          <th style="text-align:right">Cours</th>
-          <th style="text-align:right">Valeur</th><th style="text-align:right">P&L latent</th>
-          <th style="text-align:right">P&L %</th><th>Poids</th><th>CCY</th>
+          <th data-esort="pru" style="text-align:right;cursor:pointer" class="${eqSortCol==='pru'?'active':''}">PRU${eArr('pru')}</th>
+          <th data-esort="pruAdj" style="text-align:right;cursor:pointer" class="${eqSortCol==='pruAdj'?'active':''}" title="PRU − primes d'options nettes du ticker ÷ nb d'actions">PRU ajusté${eArr('pruAdj')}</th>
+          <th data-esort="price" style="text-align:right;cursor:pointer" class="${eqSortCol==='price'?'active':''}">Cours${eArr('price')}</th>
+          <th data-esort="valueBase" style="text-align:right;cursor:pointer" class="${eqSortCol==='valueBase'?'active':''}">Valeur${eArr('valueBase')}</th>
+          <th data-esort="pnlBase" style="text-align:right;cursor:pointer" class="${eqSortCol==='pnlBase'?'active':''}">P&L latent${eArr('pnlBase')}</th>
+          <th data-esort="pnlPct" style="text-align:right;cursor:pointer" class="${eqSortCol==='pnlPct'?'active':''}">P&L %${eArr('pnlPct')}</th>
+          <th>Poids</th><th>CCY</th>
         </tr></thead>
         <tbody>${rows.map(r => {
           const cs = ccySym(r.currency);
           const weight = totalValue !== 0 ? (r.valueBase / totalValue) * 100 : 0;
           const isFx = r.currency && r.currency !== BASE_CCY;
-          // PRU ajusté (logique wheel) : PRU économique − primes d'options nettes du ticker ÷ nb d'actions.
-          // Positions longues uniquement (le concept n'a pas de sens sur un short).
-          const prem = tickerNetPremiumOrig(r.ticker, r.currency);
-          const pruAdj = prem.count > 0 && r.qty > 0 ? r.pru - prem.sum / r.qty : null;
+          // PRU ajusté : calculé en amont (avant tri), voir la construction de `rows` plus haut.
+          const pruAdj = r.pruAdj;
           const pruTip = r.econOk
             ? `Coût d'achat réel moyen (primes comptées dans « Primes collectées », non déduites ici)`
             : `PRU du relevé IBKR (primes des options assignées déduites) — importez l'historique d'achat complet pour le coût économique`;
@@ -5089,7 +5126,7 @@ function renderEquities() {
             <td class="mono" style="text-align:right;color:${r.qty < 0 ? 'var(--red)' : 'var(--c-text)'}">${r.qty}</td>
             ${covHtml}
             <td class="mono" style="text-align:right;color:#00e5cc" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
-            <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${prem.sum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
+            <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${r.premSum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
             <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
             <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? `<div style="color:var(--text);font-size:10px;font-weight:400;margin-top:1px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</div>` : ''}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlBase)};font-weight:600">${sign(r.pnlBase)}${fmt(r.pnlBase)}</td>
@@ -5100,6 +5137,12 @@ function renderEquities() {
         }).join('')}</tbody>
       </table>`}
     </div>`}`;
+
+  // Attribut distinct de data-psort (Positions Options) et data-sort (Ranking) : les trois
+  // tableaux ne doivent pas se voir attribuer le gestionnaire de clic des autres.
+  document.querySelectorAll('th[data-esort]').forEach(th => {
+    th.addEventListener('click', () => setEqSort(th.dataset.esort));
+  });
 
   // Ré-applique la recherche en cours (survit aux re-renders : refresh prix, switch d'onglet)
   if (eqSearchQ) {
@@ -5256,6 +5299,13 @@ function renderPositions() {
 
   const daysTo = e => Math.round((new Date(e) - today) / 86400000);
 
+  // Collatéral qui se libère dans les 7 jours — même formule que totalCollateral (PUT vendus
+  // uniquement, les calls n'immobilisent pas de cash), restreinte aux échéances proches. Sert
+  // au sous-libellé du KPI « Collatéral PUT requis » : savoir ce qui se débloque cette semaine
+  // sans changer d'onglet.
+  const collat7d = openGrouped.filter(t => t.type === 'P' && t.action === 'SELL' && daysTo(t.expiry) <= 7)
+    .reduce((s, t) => s + toBaseToday(t.strike * t.qty * getMultiplier(t), t.currency), 0);
+
   const urgencyBg = days =>
     days <= 7  ? 'rgba(248,81,73,0.15)'  :
     days <= 21 ? 'rgba(240,136,62,0.12)' :
@@ -5322,6 +5372,7 @@ function renderPositions() {
           <span style="color:${posUtilColor};font-weight:600"${utilizationPct === null ? ' title="Solde cash nul ou négatif (compte à marge) : le ratio collatéral/cash n\'est pas calculable."' : ''}>${utilizationPct === null ? 'Cash indisponible' : utilizationPct.toFixed(1) + '% du cash'}</span>
           <span>/ ${fmt(cashAvailable)}</span>
         </div>
+        ${collat7d > 0 ? `<div class="pos-kpi-sub" style="margin-top:2px;color:var(--text-muted)" title="Puts vendus (hors calls) arrivant à échéance sous 7 jours — voir Calendrier d'Expiration pour le détail par date">dont ${fmtK(collat7d)} libérable sous 7j</div>` : ''}
       </div>
       <div class="pos-kpi">
         <div class="pos-kpi-label">Taux de rendement moyen</div>
@@ -5449,9 +5500,23 @@ function renderPositions() {
                 const bg = urgencyBg(days);
                 const border = urgencyBorder(days);
                 const tc = urgencyText(days);
-                return `<th style="text-align:center;padding:8px 14px;background:${bg};border:1px solid ${border};border-radius:7px;min-width:130px">
+                // Collatéral qui se libère CE jour-là — PUT vendus uniquement, même formule que
+                // le KPI du haut. Greffé sur la ligne existante plutôt qu'une ligne à part :
+                // l'en-tête est déjà dense, Juan ne voulait rien de plus gros.
+                const putCollat = (tickersByExpiry[e]||[]).filter(t => t.type === 'P' && t.action === 'SELL')
+                  .reduce((s, t) => s + toBaseToday(t.strike * t.qty * getMultiplier(t), t.currency), 0);
+                // Infobulle en toutes lettres : le montant compact ($22.0k) dans l'en-tête perd
+                // la précision, et « libérable » (pas « libéré ») reste honnête — un PUT assigné
+                // ne libère rien, il convertit le collatéral en achat d'actions.
+                const moisLongs = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+                const dateExp = new Date(e);
+                const dateLongue = `${dateExp.getDate()} ${moisLongs[dateExp.getMonth()]} ${dateExp.getFullYear()}`;
+                const collatTip = putCollat > 0
+                  ? `Le ${dateLongue}, jusqu'à ${fmt(putCollat)} de collatéral deviennent libérables (PUT vendus à échéance, si non assignés).`
+                  : '';
+                return `<th style="text-align:center;padding:8px 14px;background:${bg};border:1px solid ${border};border-radius:7px;min-width:130px"${collatTip ? ` title="${collatTip}"` : ''}>
                   <div style="font-size:12px;font-weight:600;color:${tc}">${expLabel(e)}</div>
-                  <div style="font-size:10px;color:${tc};opacity:0.8;margin-top:2px">${days<=7?'⚠ ':''}${days}d · ${new Set((tickersByExpiry[e]||[]).map(t => `${t.ticker}|${t.type}|${t.strike}`)).size} pos.</div>
+                  <div style="font-size:10px;color:${tc};opacity:0.8;margin-top:2px">${days<=7?'⚠ ':''}${days}d · ${new Set((tickersByExpiry[e]||[]).map(t => `${t.ticker}|${t.type}|${t.strike}`)).size} pos.${putCollat > 0 ? ' · ' + fmtK(putCollat) : ''}</div>
                 </th>`;
               }).join('')}
             </tr>
