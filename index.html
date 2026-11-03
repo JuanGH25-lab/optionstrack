@@ -210,18 +210,18 @@
 <script src="fx-rates.js"></script>
 <style>
 :root {
-  --bg:#0d1117; --surface:#161b22; --surface2:#1c2330; --surface3:#21262d;
-  --border:#21262d; --border2:#30363d;
+  --bg:#070b16; --surface:#0d1520; --surface2:#122944; --surface3:#15304f;
+  --border:#28374f; --border2:#33496b;
   --text:#e6edf3; --text-muted:#7d8590; --text-dim:#4d5560; --text-soft:#9fb2c4;
   --blue:#1f6feb; --green:#2ea043; --orange:#f0883e;
   --red:#f85149; --purple:#bc8cff; --cyan:#39c5cf;
   --nav-w:224px;
   /* Extended design system */
-  --page-bg:#0a0e14;
-  --card-bg:#111820;
+  --page-bg:#070b16;
+  --card-bg:#0d1520;
   --card-surface:#0d1520;
-  --card-border:#1a2535;
-  --card-border2:#1e3045;
+  --card-border:#28374f;
+  --card-border2:#33496b;
   --tick-bg:#131e2b;
   --c-text:#e6edf3;
   --c-secondary:#a8bbd0;
@@ -255,15 +255,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);dis
 
 /* ── Sidebar ── */
 .sidebar{width:var(--nav-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;}
-.sb-logo{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.sb-logo{padding:18px 20px 14px;display:flex;align-items:center;gap:10px;}
 .logo-icon{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
 .logo-text{font-size:21px;font-weight:700;letter-spacing:-0.3px;}
-.sb-user{padding:14px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}
-.sb-accounts{padding:10px 20px;border-bottom:1px solid var(--border);}
+.sb-user{padding:14px 20px;display:flex;align-items:center;gap:10px;}
+.sb-accounts{padding:10px 20px;}
 .sb-accounts-row{display:flex;gap:6px;align-items:center;}
-.sb-accounts select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text);cursor:pointer;outline:none;}
+.sb-accounts select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text);cursor:pointer;outline:none;}
 .sb-accounts select:hover{border-color:var(--blue);}
-.sb-gear{flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0;}
+.sb-gear{flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0;}
 .sb-gear:hover{border-color:var(--blue);color:var(--text);}
 .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex-shrink:0;}
 .u-name{font-size:12px;font-weight:500;}
@@ -315,7 +315,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);dis
 .section-title{font-size:13px;font-weight:600;}
 .section-sub{font-size:11px;color:var(--text-muted);margin-top:2px;}
 .tf-tabs{display:flex;gap:3px;background:var(--bg);padding:3px;border-radius:7px;border:1px solid var(--border);}
-.yr-tabs{display:flex;gap:3px;background:var(--surface2);padding:3px;border-radius:7px;border:1px solid var(--border);}
+.yr-tabs{display:flex;gap:3px;background:var(--bg);padding:3px;border-radius:7px;border:1px solid var(--border);}
 .yr-tab{padding:4px 13px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;color:#a8bbd0;border:none;background:none;transition:all 0.12s;font-family:'DM Mono',monospace;}
 .yr-tab:hover{color:var(--text);}
 .yr-tab.active{background:var(--blue);color:#fff;}
@@ -530,7 +530,7 @@ tbody tr:hover{background:var(--surface2);}
     <div class="topbar-right">
       <div class="topbar-meta" id="topbar-meta">—</div>
       <div class="yr-tabs" id="yr-tabs"></div>
-      <button id="theme-toggle" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:15px;line-height:1;transition:all 0.15s;color:var(--text-muted);" title="Toggle light/dark mode">🌙</button>
+      <button id="theme-toggle" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:15px;line-height:1;transition:all 0.15s;color:var(--text-muted);" title="Toggle light/dark mode">🌙</button>
     </div>
   </div>
   <div class="content" id="content"></div>
@@ -1776,7 +1776,7 @@ function renderDashboard() {
 
   document.getElementById('content').innerHTML = `
     <style>
-      .db-kpi { background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px; }
+      .db-kpi { background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.35); }
       .db-kpi-label { font-size:10px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px; }
       .db-kpi-val   { font-size:21px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-0.5px;line-height:1.1; }
       .db-kpi-sub   { font-size:11px;color:var(--c-muted);margin-top:5px;font-family:'DM Mono',monospace; }
@@ -4540,8 +4540,8 @@ function openTickerModal(ticker, defaultTab) {
   // Grille : les 3 premières cartes (plus de contenu) plus larges, "Dividendes nets" et
   // "Total trades" (les plus courtes) plus étroites. Repli sur colonnes égales si ≠ 5 cartes.
   const kpiCols = cards.length === 5 ? '1.15fr 1.15fr 1.15fr 0.8fr 0.75fr' : `repeat(${cards.length},1fr)`;
-  const kpiRow = `<div style="display:grid;grid-template-columns:${kpiCols};border-bottom:1px solid var(--card-border);flex-shrink:0">
-    ${cards.map((c, i) => `<div style="padding:16px 22px${i < cards.length - 1 ? ';border-right:1px solid var(--card-border)' : ''}">${c}</div>`).join('')}
+  const kpiRow = `<div style="display:grid;grid-template-columns:${kpiCols};gap:10px;padding:20px 22px 22px;flex-shrink:0">
+    ${cards.map(c => `<div style="background:var(--page-bg);border-radius:10px;padding:14px 16px">${c}</div>`).join('')}
   </div>`;
 
   // ── Barre d'onglets (uniquement si les deux types existent).
@@ -4640,7 +4640,7 @@ function openTickerModal(ticker, defaultTab) {
     </table>`;
 
   document.getElementById('equity-modal-content').innerHTML = `
-    <div style="padding:18px 22px;border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+    <div style="padding:20px 22px 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:12px">
         <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--tick-bg);border:1px solid var(--card-border2);border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;color:${tickColor};letter-spacing:0.3px;font-family:'DM Mono',monospace">${ticker}</span>
         <div>
