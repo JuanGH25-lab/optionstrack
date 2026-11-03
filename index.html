@@ -4159,15 +4159,103 @@ function setEqSort(col) {
   attachContentListeners();
 }
 
+// Mode d'affichage du PRU ajusté — préférence de LECTURE globale (comme olt_monthly_incl_div),
+// pas une donnée de compte. Par défaut "all" (comportement historique inchangé) : personne ne
+// voit son PRU ajusté bouger au prochain chargement sans l'avoir demandé.
+//   "all"   → toutes les primes jamais encaissées sur le ticker (comportement d'origine).
+//   "cycle" → seulement les primes depuis le dernier retour à zéro de la position (certains
+//             membres ne veulent pas qu'un cycle déjà clôturé et déjà compté dans le P&L
+//             réalisé vienne encore alléger le PRU ajusté du cycle actuel).
+let pruAdjMode = localStorage.getItem('olt_pruadj_mode') || 'all';
+
+function setPruAdjMode(mode) {
+  pruAdjMode = mode;
+  try { localStorage.setItem('olt_pruadj_mode', mode); } catch {}
+  renderEquities();
+  attachContentListeners();
+}
+
+// Date de départ du cycle EN COURS pour un ticker : la date du dernier CHANGEMENT DE CAMP du
+// solde d'actions détenues (long ↔ court ↔ plat), repéré dans stockTrades (qty signée,
+// négative = vente — assignations et exercices y figurent déjà comme des trades actions).
+// Rend null si indéterminable (pas d'historique stockTrades pour ce ticker) ou si le camp n'a
+// jamais changé depuis le début — dans les deux cas, pruAjuste() retombe sur tout l'historique,
+// comme en mode "all".
+//
+// PAS un simple retour à zéro exact : un retour-à-zéro strict peut rater une vraie bascule si le
+// solde calculé depuis stockTrades est décalé du solde réel. Cas vu en prod chez Juan sur NIO :
+// somme des trades importés = 19 400, solde réel (stockPositions, relevé IBKR) = 20 000 — écart
+// constant de 600 actions dû à un changement de juridiction IBKR qui a rendu les relevés
+// antérieurs à 2022 indisponibles, donc un achat d'ouverture non importé. Sans correction, le
+// solde calculé ne retombe JAMAIS exactement sur 0, même aux vraies clôtures. D'où l'ANCRAGE
+// ci-dessous sur stockPositions (le solde réel actuel, fiable) plutôt que sur la somme brute de
+// stockTrades : on fait démarrer le solde courant non pas à 0 mais au solde initial implicite
+// (solde réel actuel − somme des trades connus), pour que les vraies bascules retombent aux
+// bonnes dates même quand l'historique importé est incomplet.
+//
+// Un changement de camp (long ↔ court ↔ plat) vaut bascule, que le trade qui l'opère atterrisse
+// pile sur zéro ou non — couvre aussi le cas (plus rare) d'une grosse ligne qui fait sauter le
+// solde d'un camp à l'autre sans jamais toucher 0 (ex. assignation en bloc).
+//
+// On rend la date de la bascule elle-même, PAS celle du trade qui rouvre la position dans le
+// nouveau sens — SAUF quand cette bascule part de PLAT (une position totalement fermée, puis
+// rouverte PLUS TARD) : l'option qui cause cette réouverture est vendue quelques jours AVANT
+// elle, donc après la clôture qui l'a précédée mais avant la date de la bascule elle-même.
+// Couper à la date de réouverture excluait à tort cette prime — exactement celle qui finance le
+// nouveau cycle — d'où le repli sur la bascule PRÉCÉDENTE dans ce cas précis. Un changement de
+// camp DIRECT (long↔court, sans repasser par plat, ex. assignation en bloc) n'a pas ce problème :
+// rien ne prédate la bascule elle-même dans ce cas, sa propre date suffit. Angle mort assumé :
+// une clôture et une réouverture le MÊME jour calendaire comptent leurs primes ensemble (pas de
+// comparaison à l'heure).
+function cycleStartDate(ticker) {
+  const txs = stockTrades
+    .filter(t => normTicker(t.ticker) === normTicker(ticker))
+    .slice()
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  if (!txs.length) return null;
+  const cote = v => Math.abs(v) < 0.0001 ? 0 : (v > 0 ? 1 : -1);
+  const soldeCalcule = txs.reduce((s, t) => s + t.qty, 0);
+  const pos = stockPositions.find(p => normTicker(p.ticker) === normTicker(ticker));
+  let solde = pos ? pos.qty - soldeCalcule : 0;
+  const bascules = []; // { avant, apres, date } — un changement de camp, dans l'ordre chronologique
+  txs.forEach(t => {
+    const avant = cote(solde);
+    solde += t.qty;
+    const apres = cote(solde);
+    if (apres !== avant) bascules.push({ avant, apres, date: t.date });
+  });
+  if (!bascules.length) return null;
+  const derniere = bascules[bascules.length - 1];
+  if (derniere.avant === 0) {
+    return bascules.length >= 2 ? bascules[bascules.length - 2].date : null;
+  }
+  return derniere.date;
+}
+
+// PRU ajusté — point d'entrée UNIQUE, utilisé par le tableau Positions actuelles ET la modale
+// de détail d'un titre. Centralisé pour que les deux ne puissent jamais afficher deux chiffres
+// différents pour la même position. Rend null si rien à ajuster (position courte, ou aucune
+// prime d'option collectée sur ce ticker dans la fenêtre considérée).
+function pruAjuste(ticker, ccy, pruBrut, qty) {
+  if (!(qty > 0)) return null;
+  const depuis = pruAdjMode === 'cycle' ? cycleStartDate(ticker) : null;
+  const prem = tickerNetPremiumOrig(ticker, ccy, depuis);
+  if (!prem.count) return null;
+  return { value: pruBrut - prem.sum / qty, sum: prem.sum, count: prem.count };
+}
+
 // Primes d'options NETTES (primes − frais, rolls/rachats inclus) collectées sur un ticker,
 // dans la DEVISE de la position (pour soustraire du PRU sans mélange de devises).
 // On ne somme que les options de la même devise (cas quasi exclusif) ; valeurs d'origine
 // pour les imports XML (premiumOrig, pré-convertis en base sinon), directes pour le CSV.
-function tickerNetPremiumOrig(ticker, ccy) {
+// `depuis` (optionnel, date ISO) : ne compte que les primes à partir de cette date — utilisé
+// par pruAjuste() en mode "cycle". Sans lui, tout l'historique (comportement d'origine).
+function tickerNetPremiumOrig(ticker, ccy, depuis) {
   let sum = 0, count = 0;
   transactions.forEach(t => {
     if (normTicker(t.ticker) !== normTicker(ticker)) return;
     if ((t.currency || 'USD') !== (ccy || 'USD')) return;
+    if (depuis && t.date < depuis) return;
     const isPreConv = t.fxRate && t.fxRate !== 1 && t.currency !== BASE_CCY;
     sum += isPreConv
       ? (t.premiumOrig != null ? t.premiumOrig : t.premiumCollected) + (t.feesOrig != null ? t.feesOrig : (t.fees || 0))
@@ -4427,12 +4515,12 @@ function openTickerModal(ticker, defaultTab) {
   // 3. Actions détenues (+ sous-ligne PRU → PRU ajusté quand on détient + primes)
   let pruSub = '&nbsp;';
   if (openQty > 0) {
-    const prem = tickerNetPremiumOrig(ticker, ccy);
-    if (prem.count) {
-      const econ = stockEconPru(ticker, pos.qty, pos.costBasisPrice, pos.costBasisMoney);
-      const pruAdj = econ.pru - prem.sum / openQty;
-      const adjTip = `PRU ajusté : votre prix de revient diminué des primes d'options nettes encaissées sur ${ticker} (PRU ${cs}${econ.pru.toFixed(2)} − ${cs}${prem.sum.toFixed(2)} ÷ ${openQty} actions). C'est votre véritable seuil de rentabilité.`;
-      pruSub = `<span style="font-size:13px">PRU ${cs}${econ.pru.toFixed(2)}${!econ.ok ? ' IB' : ''} → <span style="color:var(--gold);font-weight:600;cursor:help" title="${adjTip}">${cs}${pruAdj.toFixed(2)}</span></span>`;
+    const econ = stockEconPru(ticker, pos.qty, pos.costBasisPrice, pos.costBasisMoney);
+    const premRes = pruAjuste(ticker, ccy, econ.pru, openQty);
+    if (premRes) {
+      const modeLbl = pruAdjMode === 'cycle' ? 'cycle en cours' : 'historique complet';
+      const adjTip = `PRU ajusté (${modeLbl}) : votre prix de revient diminué des primes d'options nettes encaissées sur ${ticker} (PRU ${cs}${econ.pru.toFixed(2)} − ${cs}${premRes.sum.toFixed(2)} ÷ ${openQty} actions). C'est votre véritable seuil de rentabilité.`;
+      pruSub = `<span style="font-size:13px">PRU ${cs}${econ.pru.toFixed(2)}${!econ.ok ? ' IB' : ''} → <span style="color:var(--gold);font-weight:600;cursor:help" title="${adjTip}">${cs}${premRes.value.toFixed(2)}</span></span>`;
     }
   }
   cards.push(card('Actions détenues',
@@ -4600,12 +4688,12 @@ function renderEquities() {
                    : econ.ok ? pnlOrig * (p.fxRateToBase || 1)
                    : (p.fifoPnlUnrealized || 0) * (p.fxRateToBase || 1);
     const pnlPct   = costOrig !== 0 ? (pnlOrig / Math.abs(costOrig)) * 100 : 0;
-    // PRU ajusté (logique wheel) : PRU économique − primes d'options nettes du ticker ÷ nb
-    // d'actions. Calculé ICI (pas seulement dans la boucle d'affichage plus bas) pour être
+    // PRU ajusté (logique wheel) — voir pruAjuste() pour le mode "cycle en cours" vs "historique
+    // complet". Calculé ICI (pas seulement dans la boucle d'affichage plus bas) pour être
     // disponible au tri — null sur un short ou sans prime collectée, trié en fin de liste.
-    const prem = tickerNetPremiumOrig(p.ticker, p.currency);
-    const pruAdj = prem.count > 0 && p.qty > 0 ? pru - prem.sum / p.qty : null;
-    return { ...p, live, price, valueOrig, valueBase, pru, pruAdj, premSum: prem.sum, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
+    const premRes = pruAjuste(p.ticker, p.currency, pru, p.qty);
+    const pruAdj = premRes ? premRes.value : null;
+    return { ...p, live, price, valueOrig, valueBase, pru, pruAdj, premSum: premRes ? premRes.sum : 0, econOk: econ.ok, costOrig, pnlOrig, pnlBase, pnlPct };
   }).sort((a, b) => {
     const col = eqSortCol;
     const av = a[col], bv = b[col];
@@ -5062,6 +5150,14 @@ function renderEquities() {
 
     <div class="eq-wrap">
       ${eqTabs(`<span id="price-updated" style="color:var(--c-dim);font-size:10px"></span><span>${fmtAsOf ? 'Relevé au ' + fmtAsOf : ''}</span>`)}
+      ${rows.length > 0 ? `
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 20px;border-bottom:1px solid var(--card-border)">
+        <span style="font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.5px">PRU ajusté</span>
+        <div style="display:flex;gap:2px;background:var(--page-bg);padding:2px;border-radius:6px;border:1px solid var(--card-border)">
+          <button onclick="setPruAdjMode('cycle')" style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:500;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;background:${pruAdjMode==='cycle'?'var(--card-border)':'transparent'};color:${pruAdjMode==='cycle'?'var(--c-text)':'var(--c-muted)'}" title="Ne compte que les primes encaissées depuis le dernier retour à zéro de la position sur ce ticker.">Cycle en cours</button>
+          <button onclick="setPruAdjMode('all')" style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:500;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;background:${pruAdjMode==='all'?'var(--card-border)':'transparent'};color:${pruAdjMode==='all'?'var(--c-text)':'var(--c-muted)'}" title="Additionne toutes les primes jamais encaissées sur ce ticker, même celles d'un cycle déjà entièrement liquidé.">Historique complet</button>
+        </div>
+      </div>` : ''}
       ${rows.length === 0 ? `
       <div style="text-align:center;padding:70px 20px;color:var(--c-muted)">
         <div style="font-size:34px;margin-bottom:14px">📊</div>
