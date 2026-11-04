@@ -5621,10 +5621,10 @@ function renderPositions() {
             ${calTickers.map(ticker => {
               const tickerTxs = open.filter(t => t.ticker === ticker);
               const isFx = tickerTxs[0]?.currency !== BASE_CCY;
-              return `<tr>
+              return `<tr data-ticker="${ticker}">
                 <td style="padding:6px 12px">
                   <div style="display:flex;align-items:center;gap:6px">
-                    <span class="tick ${tickCcyClass(tickerTxs[0]?.currency)}">${ticker}</span>
+                    <span class="pos-tick ${tickCcyClass(tickerTxs[0]?.currency)}">${ticker}</span>
                     ${isFx?`<span class="pill ${(tickerTxs[0]?.currency||'eur').toLowerCase()}" style="font-size:9px">${tickerTxs[0]?.currency || 'FX'}</span>`:''}
                   </div>
                 </td>
