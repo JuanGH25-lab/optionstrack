@@ -4157,6 +4157,18 @@ function anyTrackedMarketOpen() {
   return states.some(s => s.open === true);
 }
 
+// Date du dernier relevé IBKR (Flex Query) utilisé pour les positions — SOURCE UNIQUE pour
+// les deux pages (Positions Options et Actions & ETF) : accountKPI._stockPosAsOf, alimenté par
+// le reportDate des <OpenPosition> du relevé (actions ET options partagent le même reportDate
+// dans un même import — voir ibParseXML). '' si jamais encore connu (ex. compte options-only
+// dont aucun import n'a jamais contenu de données actions).
+function fmtPositionsAsOf() {
+  const asOf = accountKPI._stockPosAsOf || '';
+  if (!asOf) return '';
+  const [y, m, d] = asOf.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'});
+}
+
 // Dernier fetch de cours réellement effectué (epoch ms) — pilote le throttle 5 min du
 // superviseur ci-dessous ET le minimum 60s du retour d'onglet (voir écouteur visibilitychange).
 let lastPriceFetchAt = 0;
@@ -4177,22 +4189,18 @@ async function refreshPricesAndRender() {
     renderEquities();
     attachContentListeners();
   }
-  // Update last refresh indicator — horodatage de NOTRE fetch + date du jour, fusionnés dans
-  // le même élément (voir #price-updated, ex-span "Au <date>" séparé). L'âge réel
+  // Update last refresh indicator — libellé UNIQUE et IDENTIQUE sur les deux pages :
+  // "Positions au <date du relevé> · Cours à <heure du dernier fetch>". L'âge réel
   // (regularMarketTime) reste calculé dans quoteAgesThisCycle mais n'est plus affiché
   // (simplification demandée) ; seul le cas "toutes les bourses suivies sont fermées" l'est.
   const el = document.getElementById('price-updated');
   if (el) {
     const hhmmss = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const asOfStr = fmtPositionsAsOf();
     const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
     const allClosed = states.length > 0 && states.every(s => s.open === false);
-    // La date fusionnée ne concerne QUE la barre d'onglets Positions Options (voir cette page) —
-    // sur Actions & ETF, #price-updated reste accompagné de son propre "Relevé au <fmtAsOf>"
-    // (date du RELEVÉ importé, différente de la date du jour), inchangé.
-    const dateSuffix = active?.dataset?.page === 'positions'
-      ? ' · ' + new Date().toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'})
-      : '';
-    el.textContent = `Cours mis à jour à ${hhmmss}${dateSuffix}${allClosed ? ' — marchés fermés' : ''}`;
+    const prefix = asOfStr ? `Positions au ${asOfStr} · ` : '';
+    el.textContent = `${prefix}Cours à ${hhmmss}${allClosed ? ' — marchés fermés' : ''}`;
   }
 }
 
@@ -5267,7 +5275,7 @@ function renderEquities() {
     </div>`}
 
     <div class="eq-wrap">
-      ${eqTabs(`<span id="price-updated" style="color:var(--c-dim);font-size:10px"></span><span>${fmtAsOf ? 'Relevé au ' + fmtAsOf : ''}</span>`)}
+      ${eqTabs(`<span id="price-updated" style="color:var(--c-dim);font-size:10px;white-space:nowrap">${fmtPositionsAsOf() ? 'Positions au ' + fmtPositionsAsOf() : ''}</span>`)}
       ${rows.length > 0 ? `
       <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 20px;border-bottom:1px solid var(--card-border)">
         <span style="font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.5px">PRU ajusté</span>
@@ -5612,7 +5620,7 @@ function renderPositions() {
           <button class="pos-tab-btn" onclick="switchPosTab('analyse')" style="border-bottom:2px solid ${positionsTab==='analyse'?'#00e5cc':'transparent'};color:${positionsTab==='analyse'?'#00e5cc':'var(--c-muted)'}">Analyse Positions Ouvertes</button>
         </div>
         <div style="font-size:11px;color:var(--c-muted);font-family:'DM Mono',monospace;display:flex;align-items:center;gap:10px;min-width:0">
-          <span id="price-updated" style="color:var(--c-dim);font-size:10px;white-space:nowrap">${new Date().toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'})}</span>
+          <span id="price-updated" style="color:var(--c-dim);font-size:10px;white-space:nowrap">${fmtPositionsAsOf() ? 'Positions au ' + fmtPositionsAsOf() : ''}</span>
           ${positionsTab === 'list' ? `<div class="eq-search">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="var(--c-dim)"><path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.099zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/></svg>
             <input id="pos-search-input" placeholder="Filtrer par ticker…" oninput="filterPosTable(this.value)"/>
