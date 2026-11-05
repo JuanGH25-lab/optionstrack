@@ -4022,7 +4022,10 @@ function yahooSymbol(ticker) {
 // Normalise GBp (pence) ↔ GBP pour la validation de devise
 const _normCcy = c => (c === 'GBp' ? 'GBP' : c);
 
-// Récupère { price, currency } pour UN symbole Yahoo précis, via la chaîne de proxies.
+// Récupère { price, currency, regularMarketTime } pour UN symbole Yahoo précis, via la
+// chaîne de proxies. cache:'no-store' sur le fetch lui-même : le cache HTTP du NAVIGATEUR ne
+// doit jamais servir une réponse locale — c'est le CDN Vercel (Vercel-CDN-Cache-Control, voir
+// api/proxy.js) qui mutualise entre membres, pas le cache du navigateur de chacun.
 async function fetchYahooQuote(sym) {
   const u1 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
   const u2 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
@@ -4035,15 +4038,41 @@ async function fetchYahooQuote(sym) {
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000), cache: 'no-store' });
       if (!res.ok) continue;
       const data = await res.json();
       const meta = data?.chart?.result?.[0]?.meta;
       const price = meta?.regularMarketPrice || meta?.previousClose;
-      if (price) return { price, currency: meta?.currency || '' };
+      if (price) return {
+        price, currency: meta?.currency || '', regularMarketTime: meta?.regularMarketTime || null,
+        tradingPeriod: meta?.currentTradingPeriod?.regular || null, // { start, end } epoch secondes — séance de CE titre
+      };
     } catch { continue; }
   }
   return null;
+}
+
+// Horodatages marché (regularMarketTime Yahoo, epoch secondes) des cours À BOURSE OUVERTE
+// obtenus durant le cycle fetchAllPrices() EN COURS — remis à zéro à chaque cycle, lu ensuite
+// pour afficher l'âge réel de la donnée la plus ancienne (voir refreshPricesAndRender). On
+// n'y inclut QUE les titres dont la bourse est confirmée ouverte : l'âge d'un cours à bourse
+// fermée n'a pas de sens à afficher comme "fraîcheur" (c'est normal qu'il date de la clôture).
+let quoteAgesThisCycle = [];
+// État marché par ticker APPLICATIF (pas le symbole Yahoo suffixé), déduit de
+// currentTradingPeriod.regular : { open: bool, start, end (epoch s) }. Alimente le badge
+// "marché fermé" dans les tableaux ET le superviseur de rafraîchissement (une bourse ouverte
+// suffit à continuer le polling, plus seulement le marché US — voir startPriceRefresh).
+let tickerMarketState = {};
+
+function recordQuote(ticker, q) {
+  if (!q) return;
+  const tp = q.tradingPeriod;
+  if (tp && typeof tp.start === 'number' && typeof tp.end === 'number') {
+    const nowSec = Date.now() / 1000;
+    const open = nowSec >= tp.start && nowSec < tp.end;
+    tickerMarketState[ticker] = { open, start: tp.start, end: tp.end };
+    if (open && q.regularMarketTime) quoteAgesThisCycle.push(q.regularMarketTime);
+  }
 }
 
 async function fetchPrice(ticker, ccy, listingExchange) {
@@ -4061,13 +4090,13 @@ async function fetchPrice(ticker, ccy, listingExchange) {
   if (known === ticker && listingExchange && YAHOO_EXCHANGE_SUFFIXES[listingExchange]) {
     const cand = ticker + YAHOO_EXCHANGE_SUFFIXES[listingExchange];
     const qe = await fetchYahooQuote(cand);
-    if (qe) { resolvedYahoo[ticker] = cand; saveAppData(); return qe.price; }
+    if (qe) { resolvedYahoo[ticker] = cand; saveAppData(); recordQuote(ticker, qe); return qe.price; }
     // Repli sur le chemin normal si cette place ne répond pas pour ce ticker précis.
   }
 
   // 1. Symbole connu (override manuel > cache auto > règle HK > ticker nu)
   const q = await fetchYahooQuote(known);
-  if (ccyMatches(q)) return q.price;
+  if (ccyMatches(q)) { recordQuote(ticker, q); return q.price; }
 
   // 2. Devise non-USD : le nu a échoué OU renvoyé la mauvaise devise → tester les suffixes de place
   if (ccy && ccy !== 'USD' && known === ticker) {
@@ -4079,6 +4108,7 @@ async function fetchPrice(ticker, ccy, listingExchange) {
       if (qc && (!qc.currency || _normCcy(qc.currency) === _normCcy(ccy))) {
         resolvedYahoo[ticker] = cand;  // mémorise la résolution
         saveAppData();                  // persiste le cache
+        recordQuote(ticker, qc);
         return qc.price;
       }
     }
@@ -4087,7 +4117,15 @@ async function fetchPrice(ticker, ccy, listingExchange) {
   return null;
 }
 
+// Tickers couverts par le polling de cours (options ouvertes + positions actions/ETF) —
+// factorisé pour être réutilisé par anyTrackedMarketOpen() (superviseur de rafraîchissement).
+function currentPriceTickers() {
+  const open = filteredTransactions().filter(t => t.status === 'Open');
+  return [...new Set([...open.map(t => t.ticker), ...stockPositions.map(p => p.ticker)])];
+}
+
 async function fetchAllPrices() {
+  quoteAgesThisCycle = []; // reset — voir recordQuote / refreshPricesAndRender
   const open = filteredTransactions().filter(t => t.status === 'Open');
   // Devise par ticker (pour résoudre le suffixe Yahoo des actions étrangères)
   const ccyByTicker = {};
@@ -4100,7 +4138,7 @@ async function fetchAllPrices() {
     if (!ccyByTicker[p.ticker]) ccyByTicker[p.ticker] = p.currency || 'USD';
     if (!exchByTicker[p.ticker] && p.listingExchange) exchByTicker[p.ticker] = p.listingExchange;
   });
-  const tickers = [...new Set([...open.map(t => t.ticker), ...stockPositions.map(p => p.ticker)])];
+  const tickers = currentPriceTickers();
   await Promise.all([
     fetchLiveFx(), // taux de change live, en parallèle des cours
     ...tickers.map(async ticker => {
@@ -4110,8 +4148,22 @@ async function fetchAllPrices() {
   ]);
 }
 
+// true/false si on connaît l'état d'au moins une bourse SUIVIE (positions affichées), null si
+// aucune donnée de séance n'est encore disponible (premier chargement) — dans ce cas le
+// superviseur retombe sur les horaires US (voir startPriceRefresh).
+function anyTrackedMarketOpen() {
+  const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
+  if (!states.length) return null;
+  return states.some(s => s.open === true);
+}
+
+// Dernier fetch de cours réellement effectué (epoch ms) — pilote le throttle 5 min du
+// superviseur ci-dessous ET le minimum 60s du retour d'onglet (voir écouteur visibilitychange).
+let lastPriceFetchAt = 0;
+
 async function refreshPricesAndRender() {
   await fetchAllPrices();
+  lastPriceFetchAt = Date.now();
   // Only re-render if we're on the positions page, list tab
   const active = document.querySelector('.nav-item.active');
   if (active?.dataset?.page === 'positions') {
@@ -4125,15 +4177,75 @@ async function refreshPricesAndRender() {
     renderEquities();
     attachContentListeners();
   }
-  // Update last refresh indicator
+  // Update last refresh indicator — horodatage de NOTRE fetch + âge réel de la donnée la plus
+  // ancienne parmi les cours reçus ce cycle (regularMarketTime Yahoo), quand disponible.
   const el = document.getElementById('price-updated');
-  if (el) el.textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+  if (el) {
+    const hhmmss = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    let ageSuffix = '';
+    if (quoteAgesThisCycle.length) {
+      // Uniquement les titres à bourse OUVERTE (voir recordQuote) — l'âge d'un cours à bourse
+      // fermée n'est pas une "fraîcheur", c'est juste l'heure de clôture.
+      const oldestEpochMs = Math.min(...quoteAgesThisCycle) * 1000;
+      const ageSec = Math.max(0, Math.round((Date.now() - oldestEpochMs) / 1000));
+      ageSuffix = ` (donnée la plus ancienne : il y a ${ageSec < 60 ? ageSec + 's' : Math.round(ageSec / 60) + 'min'})`;
+    } else {
+      const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
+      if (states.length && states.every(s => s.open === false)) ageSuffix = ' — marchés fermés';
+    }
+    el.textContent = `Cours mis à jour à ${hhmmss}${ageSuffix}`;
+  }
 }
 
+// true si on est sur une page qui affiche des cours live (Positions Options → liste, ou
+// Actions & ETF) — seules celles-ci déclenchent des appels /api/proxy automatiques.
+function isPricePage() {
+  const active = document.querySelector('.nav-item.active');
+  return (active?.dataset?.page === 'positions' && positionsTab === 'list') || active?.dataset?.page === 'equities';
+}
+
+// Marché US (NYSE/Nasdaq) ouvert ? lun-ven 9h30-16h00 America/New_York — REPLI utilisé par le
+// superviseur tant qu'aucune bourse suivie n'a encore de donnée de séance connue (voir
+// anyTrackedMarketOpen). Jours fériés US non pris en compte (simplification assumée).
+function isUSMarketOpenClient(now) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(now || new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return false;
+  const minutes = (parseInt(parts.hour, 10) % 24) * 60 + parseInt(parts.minute, 10);
+  return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+}
+
+// Superviseur léger (zéro appel réseau — juste une vérification locale chaque minute) :
+// ne déclenche un VRAI fetch de cours que si l'onglet est visible, qu'AU MOINS UNE des bourses
+// des positions affichées est ouverte (plus seulement le marché US — un portefeuille 100%
+// Paris/Londres/Hong Kong continue désormais de se rafraîchir même marché US fermé), et
+// qu'au moins 5 min se sont écoulées depuis le dernier fetch. Tant qu'aucune donnée de séance
+// n'est encore connue (premier chargement, avant le tout premier fetch réussi), repli sur les
+// horaires US. Remplace l'ancien `setInterval(refreshPricesAndRender, 5min)` inconditionnel,
+// qui tournait indéfiniment même onglet caché ou marché fermé (cause principale du volume
+// d'appels à /api/proxy). Cette approche "superviseur" redémarre d'elle-même dès que les
+// conditions redeviennent vraies, sans avoir à ré-armer explicitement un timer ailleurs.
 function startPriceRefresh() {
   if (priceRefreshTimer) clearInterval(priceRefreshTimer);
-  priceRefreshTimer = setInterval(refreshPricesAndRender, 5 * 60 * 1000);
+  priceRefreshTimer = setInterval(() => {
+    const known = anyTrackedMarketOpen();
+    const marketOk = known === null ? isUSMarketOpenClient() : known;
+    if (!isPricePage() || !marketOk || document.visibilityState !== 'visible') return;
+    if (Date.now() - lastPriceFetchAt < 5 * 60 * 1000) return;
+    refreshPricesAndRender();
+  }, 60 * 1000);
 }
+
+// Retour sur l'onglet du navigateur : un seul refresh si on est sur une page à cours live
+// et que le dernier date de plus de 60s (évite un fetch inutile si l'utilisateur jongle
+// rapidement entre onglets).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && isPricePage() && Date.now() - lastPriceFetchAt > 60 * 1000) {
+    refreshPricesAndRender();
+  }
+});
 
 let positionsTab = 'list';
 let sectorsState = { groupBy: 'sector', optType: 'ALL' };
@@ -5230,7 +5342,7 @@ function renderEquities() {
             ${covHtml}
             <td class="mono" style="text-align:right;color:#00e5cc" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
             <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${r.premSum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
-            <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
+            <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}${tickerMarketState[r.ticker]?.open === false ? ' <span style="font-size:9px;color:var(--c-dim)" title="La bourse de cotation de ce titre est actuellement fermée">marché fermé</span>' : ''}</td>
             <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? `<div style="color:var(--text);font-size:10px;font-weight:400;margin-top:1px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</div>` : ''}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlBase)};font-weight:600">${sign(r.pnlBase)}${fmt(r.pnlBase)}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlPct)}">${sign(r.pnlPct)}${r.pnlPct.toFixed(2)}%</td>
@@ -5554,7 +5666,7 @@ function renderPositions() {
           const price = livePrices[t.ticker];
           const currSym = ccySym(t.currency);
           const coursHtml = price
-            ? `<td class="mono" style="color:var(--text)">${currSym}${price.toFixed(2)}</td>`
+            ? `<td class="mono" style="color:var(--text)">${currSym}${price.toFixed(2)}${tickerMarketState[t.ticker]?.open === false ? ' <span style="font-size:9px;color:var(--text-dim)" title="La bourse de cotation de ce titre est actuellement fermée">marché fermé</span>' : ''}</td>`
             : `<td class="mono neu" id="price-${t.ticker}">…</td>`;
           let distHtml = `<td class="mono neu">—</td>`;
           if (price && (t.type === 'P' || t.type === 'C')) {
