@@ -1370,7 +1370,6 @@ function setPage(page) {
   attachContentListeners();
   if ((page === 'positions' && positionsTab === 'list') || page === 'equities') {
     refreshPricesAndRender();
-    startPriceRefresh();
   }
 }
 
@@ -3973,7 +3972,6 @@ async function captureMonthlyReport(month) {
 
 // ── Live Prices
 let livePrices = {};
-let priceRefreshTimer = null;
 
 // Overrides manuels (exceptions où la devise ne suffit pas à deviner le suffixe,
 // ex. renommage pur GLXY1→GLXY). Les actions européennes se résolvent désormais
@@ -4059,9 +4057,9 @@ async function fetchYahooQuote(sym) {
 // fermée n'a pas de sens à afficher comme "fraîcheur" (c'est normal qu'il date de la clôture).
 let quoteAgesThisCycle = [];
 // État marché par ticker APPLICATIF (pas le symbole Yahoo suffixé), déduit de
-// currentTradingPeriod.regular : { open: bool, start, end (epoch s) }. Alimente le badge
-// "marché fermé" dans les tableaux ET le superviseur de rafraîchissement (une bourse ouverte
-// suffit à continuer le polling, plus seulement le marché US — voir startPriceRefresh).
+// currentTradingPeriod.regular : { open: bool, start, end (epoch s) }. Sert uniquement à
+// l'affichage "— marchés fermés" dans refreshPricesAndRender — ne déclenche plus aucun appel
+// réseau (l'ancien superviseur périodique qui s'appuyait dessus a été supprimé).
 let tickerMarketState = {};
 
 function recordQuote(ticker, q) {
@@ -4117,8 +4115,7 @@ async function fetchPrice(ticker, ccy, listingExchange) {
   return null;
 }
 
-// Tickers couverts par le polling de cours (options ouvertes + positions actions/ETF) —
-// factorisé pour être réutilisé par anyTrackedMarketOpen() (superviseur de rafraîchissement).
+// Tickers couverts par le polling de cours (options ouvertes + positions actions/ETF).
 function currentPriceTickers() {
   const open = filteredTransactions().filter(t => t.status === 'Open');
   return [...new Set([...open.map(t => t.ticker), ...stockPositions.map(p => p.ticker)])];
@@ -4148,13 +4145,17 @@ async function fetchAllPrices() {
   ]);
 }
 
-// true/false si on connaît l'état d'au moins une bourse SUIVIE (positions affichées), null si
-// aucune donnée de séance n'est encore disponible (premier chargement) — dans ce cas le
-// superviseur retombe sur les horaires US (voir startPriceRefresh).
-function anyTrackedMarketOpen() {
-  const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
-  if (!states.length) return null;
-  return states.some(s => s.open === true);
+// Garde-fou anti-doublon : si un fetch de cours est déjà en cours (ex. deux déclencheurs
+// légitimes qui se chevauchent — navigation + retour d'onglet quasi simultanés), les appels
+// suivants réutilisent la MÊME promesse plutôt que de relancer une seconde salve de requêtes
+// vers /api/proxy. Chaque appelant continue d'attendre la fin du fetch pour faire son propre
+// rendu (nécessaire pour loadAnalyseData, qui ne redessine pas via refreshPricesAndRender).
+let priceFetchPromise = null;
+function fetchAllPricesShared() {
+  if (!priceFetchPromise) {
+    priceFetchPromise = fetchAllPrices().finally(() => { priceFetchPromise = null; });
+  }
+  return priceFetchPromise;
 }
 
 // Date du dernier relevé IBKR (Flex Query) utilisé pour les positions — SOURCE UNIQUE pour
@@ -4169,13 +4170,8 @@ function fmtPositionsAsOf() {
   return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'});
 }
 
-// Dernier fetch de cours réellement effectué (epoch ms) — pilote le throttle 5 min du
-// superviseur ci-dessous ET le minimum 60s du retour d'onglet (voir écouteur visibilitychange).
-let lastPriceFetchAt = 0;
-
 async function refreshPricesAndRender() {
-  await fetchAllPrices();
-  lastPriceFetchAt = Date.now();
+  await fetchAllPricesShared();
   // Only re-render if we're on the positions page, list tab
   const active = document.querySelector('.nav-item.active');
   if (active?.dataset?.page === 'positions') {
@@ -4205,51 +4201,19 @@ async function refreshPricesAndRender() {
 }
 
 // true si on est sur une page qui affiche des cours live (Positions Options → liste, ou
-// Actions & ETF) — seules celles-ci déclenchent des appels /api/proxy automatiques.
+// Actions & ETF) — seules celles-ci déclenchent des appels /api/proxy automatiques (chargement,
+// navigation depuis une autre page, retour sur l'onglet du navigateur — plus aucun
+// rafraîchissement périodique, voir l'écouteur visibilitychange ci-dessous).
 function isPricePage() {
   const active = document.querySelector('.nav-item.active');
   return (active?.dataset?.page === 'positions' && positionsTab === 'list') || active?.dataset?.page === 'equities';
 }
 
-// Marché US (NYSE/Nasdaq) ouvert ? lun-ven 9h30-16h00 America/New_York — REPLI utilisé par le
-// superviseur tant qu'aucune bourse suivie n'a encore de donnée de séance connue (voir
-// anyTrackedMarketOpen). Jours fériés US non pris en compte (simplification assumée).
-function isUSMarketOpenClient(now) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-  }).formatToParts(now || new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
-  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return false;
-  const minutes = (parseInt(parts.hour, 10) % 24) * 60 + parseInt(parts.minute, 10);
-  return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
-}
-
-// Superviseur léger (zéro appel réseau — juste une vérification locale chaque minute) :
-// ne déclenche un VRAI fetch de cours que si l'onglet est visible, qu'AU MOINS UNE des bourses
-// des positions affichées est ouverte (plus seulement le marché US — un portefeuille 100%
-// Paris/Londres/Hong Kong continue désormais de se rafraîchir même marché US fermé), et
-// qu'au moins 5 min se sont écoulées depuis le dernier fetch. Tant qu'aucune donnée de séance
-// n'est encore connue (premier chargement, avant le tout premier fetch réussi), repli sur les
-// horaires US. Remplace l'ancien `setInterval(refreshPricesAndRender, 5min)` inconditionnel,
-// qui tournait indéfiniment même onglet caché ou marché fermé (cause principale du volume
-// d'appels à /api/proxy). Cette approche "superviseur" redémarre d'elle-même dès que les
-// conditions redeviennent vraies, sans avoir à ré-armer explicitement un timer ailleurs.
-function startPriceRefresh() {
-  if (priceRefreshTimer) clearInterval(priceRefreshTimer);
-  priceRefreshTimer = setInterval(() => {
-    const known = anyTrackedMarketOpen();
-    const marketOk = known === null ? isUSMarketOpenClient() : known;
-    if (!isPricePage() || !marketOk || document.visibilityState !== 'visible') return;
-    if (Date.now() - lastPriceFetchAt < 5 * 60 * 1000) return;
-    refreshPricesAndRender();
-  }, 60 * 1000);
-}
-
-// Retour sur l'onglet du navigateur : un seul refresh si on est sur une page à cours live
-// et que le dernier date de plus de 60s (évite un fetch inutile si l'utilisateur jongle
-// rapidement entre onglets).
+// Retour sur l'onglet du navigateur : refresh immédiat, sans délai minimum, si on est sur une
+// page à cours live. Le garde-fou fetchAllPricesShared() ci-dessus absorbe un éventuel
+// chevauchement avec un fetch de navigation déclenché au même moment.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && isPricePage() && Date.now() - lastPriceFetchAt > 60 * 1000) {
+  if (document.visibilityState === 'visible' && isPricePage()) {
     refreshPricesAndRender();
   }
 });
@@ -5860,7 +5824,6 @@ function switchPosTab(tab) {
   attachContentListeners();
   if (tab === 'list') {
     refreshPricesAndRender();
-    startPriceRefresh();
   }
   if (tab === 'sectors') {
     sectorsState = { groupBy: 'sector', optType: 'ALL' };
@@ -5884,7 +5847,7 @@ async function loadAnalyseData(optType) {
   loadingEl.style.display = 'block';
   bodyEl.style.display    = 'none';
 
-  await fetchAllPrices();
+  await fetchAllPricesShared();
 
   const typeFilter = ot === 'PUT' ? t => t.type === 'P' : ot === 'CALL' ? t => t.type === 'C' : () => true;
   const open    = filteredTransactions().filter(t => t.status === 'Open' && t.action === 'SELL' && typeFilter(t));
