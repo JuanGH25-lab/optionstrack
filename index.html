@@ -4177,23 +4177,15 @@ async function refreshPricesAndRender() {
     renderEquities();
     attachContentListeners();
   }
-  // Update last refresh indicator — horodatage de NOTRE fetch + âge réel de la donnée la plus
-  // ancienne parmi les cours reçus ce cycle (regularMarketTime Yahoo), quand disponible.
+  // Update last refresh indicator — horodatage de NOTRE fetch. L'âge réel (regularMarketTime)
+  // reste calculé dans quoteAgesThisCycle mais n'est plus affiché (simplification demandée) ;
+  // seul le cas "toutes les bourses suivies sont fermées" reste signalé.
   const el = document.getElementById('price-updated');
   if (el) {
     const hhmmss = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    let ageSuffix = '';
-    if (quoteAgesThisCycle.length) {
-      // Uniquement les titres à bourse OUVERTE (voir recordQuote) — l'âge d'un cours à bourse
-      // fermée n'est pas une "fraîcheur", c'est juste l'heure de clôture.
-      const oldestEpochMs = Math.min(...quoteAgesThisCycle) * 1000;
-      const ageSec = Math.max(0, Math.round((Date.now() - oldestEpochMs) / 1000));
-      ageSuffix = ` (donnée la plus ancienne : il y a ${ageSec < 60 ? ageSec + 's' : Math.round(ageSec / 60) + 'min'})`;
-    } else {
-      const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
-      if (states.length && states.every(s => s.open === false)) ageSuffix = ' — marchés fermés';
-    }
-    el.textContent = `Cours mis à jour à ${hhmmss}${ageSuffix}`;
+    const states = currentPriceTickers().map(t => tickerMarketState[t]).filter(Boolean);
+    const allClosed = states.length > 0 && states.every(s => s.open === false);
+    el.textContent = `Cours mis à jour à ${hhmmss}${allClosed ? ' — marchés fermés' : ''}`;
   }
 }
 
@@ -5342,7 +5334,7 @@ function renderEquities() {
             ${covHtml}
             <td class="mono" style="text-align:right;color:#00e5cc" title="${pruTip}">${cs}${r.pru.toFixed(2)}${!r.econOk ? ' <span style="font-size:9px;color:var(--c-dim)">IB</span>' : ''}</td>
             <td class="mono" style="text-align:right;color:var(--gold);font-weight:600" ${pruAdj != null ? `title="PRU ${cs}${r.pru.toFixed(2)} − primes nettes ${cs}${r.premSum.toFixed(2)} ÷ ${r.qty} actions"` : ''}>${pruAdj != null ? cs + pruAdj.toFixed(2) : '—'}</td>
-            <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}${tickerMarketState[r.ticker]?.open === false ? ' <span style="font-size:9px;color:var(--c-dim)" title="La bourse de cotation de ce titre est actuellement fermée">marché fermé</span>' : ''}</td>
+            <td class="mono" style="text-align:right;color:var(--c-text)" ${r.live ? '' : `id="price-${r.ticker}"`}>${cs}${r.price.toFixed(2)}${r.live ? '' : ' <span style="font-size:9px;color:var(--c-dim)" title="Cours du relevé — live indisponible">✱</span>'}</td>
             <td class="mono" style="text-align:right;font-weight:600">${fmt(r.valueBase)}${isFx ? `<div style="color:var(--text);font-size:10px;font-weight:400;margin-top:1px">(${cs}${Math.abs(r.valueOrig).toFixed(0)})</div>` : ''}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlBase)};font-weight:600">${sign(r.pnlBase)}${fmt(r.pnlBase)}</td>
             <td class="mono" style="text-align:right;color:${pnlColor(r.pnlPct)}">${sign(r.pnlPct)}${r.pnlPct.toFixed(2)}%</td>
@@ -5666,7 +5658,7 @@ function renderPositions() {
           const price = livePrices[t.ticker];
           const currSym = ccySym(t.currency);
           const coursHtml = price
-            ? `<td class="mono" style="color:var(--text)">${currSym}${price.toFixed(2)}${tickerMarketState[t.ticker]?.open === false ? ' <span style="font-size:9px;color:var(--text-dim)" title="La bourse de cotation de ce titre est actuellement fermée">marché fermé</span>' : ''}</td>`
+            ? `<td class="mono" style="color:var(--text)">${currSym}${price.toFixed(2)}</td>`
             : `<td class="mono neu" id="price-${t.ticker}">…</td>`;
           let distHtml = `<td class="mono neu">—</td>`;
           if (price && (t.type === 'P' || t.type === 'C')) {
