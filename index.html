@@ -9609,7 +9609,15 @@ function ibParseCSV(csvText) {
     const f = parseLine(line);
     const key = f[2] || '';
     const val = f[3] || '';
-    if (key === 'Compte' || key === 'Account') result.accountId = val;
+    // Sur un « Récapitulatif d'activité » (Activity Summary — relevé consolidé multi-comptes,
+    // généré par IBKR pour certaines périodes/structures de compte, ex. comptes conjoints),
+    // la valeur du champ "Compte" n'est PAS l'identifiant nu : elle porte une annotation,
+    // ex. "U5419751 (Consolidation personnalisée)" au lieu de "U5419751" sur un relevé de
+    // compte individuel normal. Prise telle quelle, elle ne correspond à aucun identifiant
+    // déjà connu → faux conflit "relevé d'un autre compte" à l'import (vu chez un membre dont
+    // le relevé 2021 était consolidé mais pas les suivants). On ne garde que la partie avant
+    // la première parenthèse, qui est toujours l'identifiant réel.
+    if (key === 'Compte' || key === 'Account') result.accountId = val.replace(/\s*\(.*$/, '').trim();
     if (key === 'Nom' || key === 'Name') result.accountName = val;
     if (key === 'Devise de base' || key === 'Base Currency' || key === 'Currency') result.baseCurrency = val;
   });
